@@ -2,11 +2,7 @@
 # STAGE 1: builder
 ###################
 
-<<<<<<< HEAD
-FROM node:22-bullseye as builder
-=======
 FROM node:22-bullseye AS builder
->>>>>>> upstream/master
 
 ARG MB_EDITION=oss
 ARG VERSION=eet-1.0.0
