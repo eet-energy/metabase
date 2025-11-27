@@ -3,7 +3,7 @@
   `:add-default-userland-constraints?` `:middleware` option."
   (:require
 ;; [metabase.models.setting :as setting]
-   [metabase.config :as config]
+   [metabase.config.core :as config]
 ;; [metabase.util.i18n :refer [deferred-tru]]))
    [metabase.query-processor.settings :as qp.settings]))
 
