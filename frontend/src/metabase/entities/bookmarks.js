@@ -8,8 +8,10 @@ import Collections from "metabase/entities/collections";
 import Dashboards from "metabase/entities/dashboards";
 import Questions from "metabase/entities/questions";
 import { createEntity, entityCompatibleQuery } from "metabase/lib/entities";
+import { PLUGIN_ENTITIES } from "metabase/plugins";
 import { addUndo } from "metabase/redux/undo";
 import { BookmarkSchema } from "metabase/schema";
+
 const REORDER_ACTION = `metabase/entities/bookmarks/REORDER_ACTION`;
 
 /**
@@ -50,7 +52,7 @@ const Bookmarks = createEntity({
     REORDER: REORDER_ACTION,
   },
   actions: {
-    reorder: bookmarks => async (dispatch, getState) => {
+    reorder: (bookmarks) => async (dispatch, getState) => {
       const bookmarksBeforeReordering = getOrderedBookmarks(getState());
       const orderings = bookmarks.map(({ type, item_id }) => ({
         type,
@@ -89,7 +91,7 @@ const Bookmarks = createEntity({
       if (archived) {
         return dissoc(state, key);
       } else {
-        return updateIn(state, [key], item => ({
+        return updateIn(state, [key], (item) => ({
           ...item,
           card_type: type,
           name,
@@ -106,7 +108,7 @@ const Bookmarks = createEntity({
       if (archived) {
         return dissoc(state, key);
       } else {
-        return updateIn(state, [key], item => ({ ...item, name }));
+        return updateIn(state, [key], (item) => ({ ...item, name }));
       }
     }
 
@@ -120,7 +122,7 @@ const Bookmarks = createEntity({
       if (payload.object.archived) {
         return dissoc(state, key);
       } else {
-        return updateIn(state, [key], item => ({
+        return updateIn(state, [key], (item) => ({
           ...item,
           authority_level,
           name,
@@ -134,7 +136,7 @@ const Bookmarks = createEntity({
         return indexes;
       }, {});
 
-      return _.mapObject(state, bookmark =>
+      return _.mapObject(state, (bookmark) =>
         assoc(bookmark, "index", indexes[bookmark.id]),
       );
     }
@@ -148,6 +150,8 @@ function getEntityFor(type) {
     card: Questions,
     collection: Collections,
     dashboard: Dashboards,
+    document: PLUGIN_ENTITIES.entities["documents"],
+    transform: PLUGIN_ENTITIES.entities["transforms"],
   };
 
   return entities[type];
@@ -177,7 +181,7 @@ export function isModelBookmark(bookmark) {
 
 export const getOrderedBookmarks = createSelector(
   [Bookmarks.selectors.getList],
-  bookmarks => _.sortBy(bookmarks, bookmark => bookmark.index),
+  (bookmarks) => _.sortBy(bookmarks, (bookmark) => bookmark.index),
 );
 
 export default Bookmarks;

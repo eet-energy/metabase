@@ -5,13 +5,13 @@ import { setupEnterpriseTest } from "__support__/enterprise";
 import {
   setupCollectionItemsEndpoint,
   setupCollectionsEndpoints,
+  setupLibraryEndpoints,
   setupRecentViewsAndSelectionsEndpoints,
 } from "__support__/server-mocks";
 import { mockSettings } from "__support__/settings";
 import { createMockEntitiesState } from "__support__/store";
 import {
   mockGetBoundingClientRect,
-  mockScrollBy,
   renderWithProviders,
   screen,
   waitFor,
@@ -52,14 +52,14 @@ COLLECTION.CHILD.location = `/${COLLECTION.PARENT.id}/`;
 
 function setup({ mockCreateDashboardResponse = true } = {}) {
   mockGetBoundingClientRect();
-  mockScrollBy();
   setupRecentViewsAndSelectionsEndpoints([]);
+  setupLibraryEndpoints();
   const onClose = jest.fn();
 
   const settings = mockSettings({});
 
   if (mockCreateDashboardResponse) {
-    fetchMock.post(`path:/api/dashboard`, (url, options) => options.body);
+    fetchMock.post(`path:/api/dashboard`, (call) => call?.options.body);
   }
   const collections = Object.values(COLLECTION);
   setupCollectionsEndpoints({
@@ -85,8 +85,8 @@ function setup({ mockCreateDashboardResponse = true } = {}) {
   });
 
   collections
-    .filter(c => c.id !== "root")
-    .forEach(c => fetchMock.get(`path:/api/collection/${c.id}`, c));
+    .filter((c) => c.id !== "root")
+    .forEach((c) => fetchMock.get(`path:/api/collection/${c.id}`, c));
 
   renderWithProviders(<CreateDashboardModal opened onClose={onClose} />, {
     storeInitialState: {

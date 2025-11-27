@@ -28,11 +28,13 @@
   Question transformation:
 
   - Set display \"table\""
+  (:refer-clojure :exclude [mapv empty? not-empty #?(:clj for)])
   (:require
    [medley.core :as m]
    [metabase.lib.aggregation :as lib.aggregation]
    [metabase.lib.binning :as lib.binning]
    [metabase.lib.drill-thru.common :as lib.drill-thru.common]
+   [metabase.lib.fe-util :as lib.fe-util]
    [metabase.lib.filter :as lib.filter]
    [metabase.lib.join :as lib.join]
    [metabase.lib.metadata :as lib.metadata]
@@ -41,11 +43,14 @@
    [metabase.lib.schema :as lib.schema]
    [metabase.lib.schema.drill-thru :as lib.schema.drill-thru]
    [metabase.lib.schema.metadata :as lib.schema.metadata]
+   [metabase.lib.schema.ref :as lib.schema.ref]
+   [metabase.lib.schema.temporal-bucketing :as lib.schema.temporal-bucketing]
    [metabase.lib.temporal-bucket :as lib.temporal-bucket]
    [metabase.lib.types.isa :as lib.types.isa]
    [metabase.lib.underlying :as lib.underlying]
    [metabase.lib.util :as lib.util]
-   [metabase.util.malli :as mu]))
+   [metabase.util.malli :as mu]
+   [metabase.util.performance :refer [mapv empty? not-empty #?(:clj for)]]))
 
 (mu/defn underlying-records-drill :- [:maybe ::lib.schema.drill-thru/drill-thru.underlying-records]
   "When clicking on a particular broken-out group, offer a look at the details of all the rows that went into this
@@ -119,9 +124,13 @@
   [query        :- ::lib.schema/query
    stage-number :- :int
    column       :- ::lib.schema.metadata/column
+   column-ref   :- ::lib.schema.ref/ref
    value        :- :any]
-  (let [filter-clauses (or (when (lib.binning/binning column)
-                             (let [unbinned-column (lib.binning/with-binning column nil)]
+  (let [filter-column  (lib.drill-thru.common/breakout->filterable-column query stage-number column-ref column)
+        filter-clauses (or (when (lib.binning/binning column)
+                             (let [unbinned-column (-> filter-column
+                                                       (lib.binning/with-binning nil)
+                                                       (dissoc :lib/original-binning))]
                                (if (some? value)
                                  (when-let [{:keys [min-value max-value]} (lib.binning/resolve-bin-width query column value)]
                                    [(lib.filter/>= unbinned-column min-value)
@@ -135,12 +144,18 @@
                            ;; instead of
                            ;;
                            ;;    month(col) = March 2023
-                           (let [column (if-let [temporal-unit (::lib.underlying/temporal-unit column)]
-                                          (lib.temporal-bucket/with-temporal-bucket column temporal-unit)
-                                          column)]
-                             (if (some? value)
-                               [(lib.filter/= column value)]
-                               [(lib.filter/is-null column)])))]
+                           (let [bucket (or (::lib.underlying/temporal-unit column)
+                                            (lib.temporal-bucket/temporal-bucket column))
+                                 unit   (cond-> bucket
+                                          (map? bucket) :unit)
+                                 column (if unit
+                                          (lib.temporal-bucket/with-temporal-bucket filter-column unit)
+                                          filter-column)]
+                             (if (nil? value)
+                               [(lib.filter/is-null column)]
+                               [(cond-> (lib.filter/= column value)
+                                  (and unit (lib.schema.temporal-bucketing/datetime-truncation-units unit))
+                                  lib.fe-util/expand-temporal-expression)])))]
     (reduce
      (fn [query filter-clause]
        (lib.filter/filter query stage-number filter-clause))
@@ -158,8 +173,8 @@
         base-query  (lib.util/update-query-stage query -1 dissoc :aggregation :breakout :order-by :limit :fields)
         ;; Turn any non-aggregation dimensions into filters.
         ;; eg. if we drilled into a temporal bucket, add a filter for the [:= breakout-column that-month].
-        filtered    (reduce (fn [q {:keys [column value]}]
-                              (drill-filter q -1 column value))
+        filtered    (reduce (fn [q {:keys [column column-ref value]}]
+                              (drill-filter q -1 column column-ref value))
                             base-query
                             (for [dimension dimensions
                                   :when (-> dimension :column :lib/source (not= :source/aggregations))]

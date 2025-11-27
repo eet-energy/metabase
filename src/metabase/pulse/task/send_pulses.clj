@@ -12,18 +12,18 @@
    [clojurewerkz.quartzite.schedule.cron :as cron]
    [clojurewerkz.quartzite.triggers :as triggers]
    [metabase.driver :as driver]
-   [metabase.models.task-history :as task-history]
    [metabase.pulse.models.pulse :as models.pulse]
    [metabase.pulse.send :as pulse.send]
    [metabase.query-processor.timezone :as qp.timezone]
-   [metabase.task :as task]
+   [metabase.task-history.core :as task-history]
+   [metabase.task.core :as task]
    [metabase.util.cron :as u.cron]
    [metabase.util.log :as log]
    [metabase.util.malli :as mu]
    [toucan2.core :as t2])
   (:import
    (java.util TimeZone)
-   (org.quartz CronTrigger TriggerKey)))
+   (org.quartz CronTrigger DisallowConcurrentExecution TriggerKey)))
 
 (set! *warn-on-reflection* true)
 
@@ -52,11 +52,16 @@
     (task-history/with-task-history {:task         "send-pulse"
                                      :task_details {:pulse-id    pulse-id
                                                     :channel-ids (seq channel-ids)}}
-      (when-let [pulse (models.pulse/retrieve-notification pulse-id :archived false)]
-        (log/debugf "Starting Pulse Execution: %d" pulse-id)
-        (pulse.send/send-pulse! pulse :channel-ids channel-ids :async? true)
-        (log/debugf "Finished Pulse Execution: %d" pulse-id)
-        :done))
+      (if-let [pulse (models.pulse/retrieve-notification pulse-id
+                                                         :archived false
+                                                         ;; alerts should all be migrated to notifications by now
+                                                         :alert_condition nil)]
+        (do
+          (log/debugf "Starting Pulse Execution: %d" pulse-id)
+          (pulse.send/send-pulse! pulse :channel-ids channel-ids :async? true)
+          (log/debugf "Finished Pulse Execution: %d" pulse-id)
+          :done)
+        (log/debugf "Pulse %d not found, Skipping." pulse-id)))
     (catch Throwable e
       (log/errorf e "Error sending Pulse %d to channel ids: %s" pulse-id (str/join ", " channel-ids)))))
 
@@ -130,7 +135,6 @@
       (send-pulse! pulse-id to-send-enabled-channel-ids)
       (log/infof "Skip sending pulse %d because all channels have no recipients" pulse-id))))
 
-;; called in [driver/report-timezone] setter
 (defn update-send-pulse-triggers-timezone!
   "Update the timezone of all SendPulse triggers if the report timezone changes."
   []
@@ -145,54 +149,38 @@
         (log/infof "Updating timezone of trigger %s to %s. Was: %s" trigger-key new-timezone (:timezone trigger))
         (task/reschedule-trigger! (send-pulse-trigger pulse-id schedule-map channel-ids new-timezone (:priority trigger)))))))
 
-(jobs/defjob ^{:doc "Triggers that send a pulse to a list of channels at a specific time"}
+(task/defjob ^{:doc "Triggers that send a pulse to a list of channels at a specific time"}
   SendPulse
   [context]
   (let [{:strs [pulse-id channel-ids]} (qc/from-job-data context)]
     (send-pulse!* pulse-id channel-ids)))
 
-;;; ------------------------------------------------ Job: InitSendPulseTriggers ----------------------------------------------------
-
 (declare update-send-pulse-trigger-if-needed!)
 
-(defn init-send-pulse-triggers!
-  "Update send pulse triggers for all active pulses.
-  Called once when Metabase starts up to create triggers for all existing PulseChannels
-  and whenever the report timezone changes."
+(defn- active-dashsub-pcs
   []
-  (let [trigger-slot->pc-ids (as-> (t2/select :model/PulseChannel
-                                              {:select    [:pc.*]
-                                               :from      [[:pulse_channel :pc]]
-                                               :left-join [[:pulse :p] [:= :pc.pulse_id :p.id]
-                                                           [:report_dashboard :d] [:= :p.dashboard_id :d.id]]
-                                               :where     [:and
-                                                           [:= :pc.enabled true]
-                                                           [:or
-                                                            ;; alerts
-                                                            [:= :p.dashboard_id nil]
-                                                            ;; if dashboard subscriptions, make sure it's not archived
-                                                            [:= :d.archived false]]]})
-                                   results
+  (t2/select :model/PulseChannel
+             {:select    [:pc.*]
+              :from      [[:pulse_channel :pc]]
+              :left-join [[:pulse :p] [:= :pc.pulse_id :p.id]
+                          [:report_dashboard :d] [:= :p.dashboard_id :d.id]]
+              :where     [:and
+                          [:= :pc.enabled true]
+                          ;; only do this for dashboard subscriptions, alert has been
+                          ;; migrated to notifications
+                          [:not= :p.dashboard_id nil]
+                          [:= :d.archived false]]}))
+
+(defn init-dashboard-subscription-triggers!
+  "Update send pulse triggers for all active pulses.
+  Called once when Metabase starts up to create triggers for all existing PulseChannels"
+  []
+  (assert (task/scheduler) "Scheduler must be started before initializing SendPulse triggers")
+  (let [trigger-slot->pc-ids (as-> (active-dashsub-pcs) results
                                (group-by #(select-keys % [:pulse_id :schedule_type :schedule_day :schedule_hour :schedule_frame]) results)
                                (update-vals results #(map :id %)))]
     (doseq [[{:keys [pulse_id] :as schedule-map} pc-ids] trigger-slot->pc-ids]
       (update-send-pulse-trigger-if-needed! pulse_id schedule-map :add-pc-ids (set pc-ids)))))
-
-(jobs/defjob
-  ^{:doc
-    "Find all active pulse Channels, group them by pulse-id and schedule time and create a trigger for each.
-
-    This is basically a migration in disguise to move from the old SendPulses job to the new SendPulse job.
-
-    Context: prior to this, SendPulses is a single job that runs hourly and send all Pulses that are scheduled for that
-    hour.
-    Since that's inefficient and we want to be able to send pulses in parallel, we changed it so that each PulseChannel
-    of the same schedule will have its own SendPulse trigger.
-    During this transition, we need to schedule all the SendPulse triggers for existing PulseChannels, so we have this job
-    that run once on Metabase startup to do that."}
-  InitSendPulseTriggers
-  [_context]
-  (init-send-pulse-triggers!))
 
 ;;; --------------------------------------------- Helpers -------------------------------------------
 
@@ -244,6 +232,22 @@
         (task/delete-trigger! trigger-key)
         (task/add-trigger! (send-pulse-trigger pulse-id schedule-map new-pc-ids (send-trigger-timezone)))))))
 
+(task/defjob
+  ^{:doc
+    "Find all notification subscriptions with cron schedules and create a trigger for each.
+    Run once on startup.
+
+    Context: Prior to 50, the SendPulse job has a single trigger that sends all pulses, but in #42316
+    We've changed it to one trigger per PulseChannel. We need this job so that users migrate from < 50
+    have all the triggers initiated properly.
+    The fact that it runs on every startup is because we have no way to have it run only once.
+    Ideally this should be a migration."
+    DisallowConcurrentExecution true}
+  InitSendPulseTriggers
+  [_context]
+  (log/info "Initializing SendPulse triggers for dashboard subscriptions")
+  (init-dashboard-subscription-triggers!))
+
 ;;; -------------------------------------------------- Task init ------------------------------------------------
 
 (defmethod task/init! ::SendPulses [_]
@@ -257,8 +261,8 @@
                         (jobs/with-identity (jobs/key "metabase.task.send-pulses.init-send-pulse-triggers.job"))
                         (jobs/store-durably))
         init-trigger   (triggers/build
+                        ;; run once on startup
                         (triggers/with-identity (triggers/key "metabase.task.send-pulses.init-send-pulse-triggers.trigger"))
-                        ;; run only once per MB instance (like a migration)
                         (triggers/start-now))]
     (task/add-job! send-pulse-job)
     (task/schedule-task! init-job init-trigger)))

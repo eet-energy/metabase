@@ -4,9 +4,10 @@
    [clojure.set :refer [subset?]]
    [clojure.test :refer :all]
    [metabase-enterprise.advanced-permissions.models.permissions.group-manager :as gm]
-   [metabase.models.user :as user]
+   [metabase.permissions.core :as perms]
    [metabase.permissions.models.permissions-group :as perms-group]
    [metabase.test :as mt]
+   [metabase.users.models.user :as user]
    [metabase.util :as u]
    [toucan2.core :as t2]))
 
@@ -332,9 +333,7 @@
                   (remove-user-from-group! [req-user status group-to-remove]
                     (u/ignore-exceptions
                      ;; ensure `user-to-update` is in `group-to-remove`
-                      (t2/insert! :model/PermissionsGroupMembership
-                                  :user_id (:id user-to-update)
-                                  :group_id (:id group-to-remove)))
+                      (perms/add-user-to-group! user-to-update group-to-remove))
                     (let [current-user-group-membership (gm/user-group-memberships user-to-update)
                           new-user-group-membership     (into [] (filter #(not= (:id group-to-remove)
                                                                                 (:id %))
@@ -379,3 +378,22 @@
                     (mt/with-temp [:model/PermissionsGroup random-group]
                       (add-user-to-group! user 403 random-group)
                       (remove-user-from-group! user 403 random-group))))))))))))
+
+(deftest get-user-structured-attributes-permissions-test
+  (testing "GET /api/user/:id structured_attributes permissions"
+    (testing "group managers can see structured_attributes"
+      (mt/with-premium-features #{:advanced-permissions}
+        (mt/with-temp [:model/User user {:first_name "Managed"
+                                         :last_name "User"
+                                         :email "managed@test.com"
+                                         :login_attributes {"dept" "sales"}}
+                       :model/PermissionsGroup group {:name "Test Group"}
+                       :model/PermissionsGroupMembership _ {:user_id (mt/user->id :rasta)
+                                                            :group_id (:id group)
+                                                            :is_group_manager true}
+                       :model/PermissionsGroupMembership _ {:user_id (:id user)
+                                                            :group_id (:id group)}]
+          (let [response (mt/user-http-request :rasta :get 200 (str "user/" (:id user)))]
+            (is (contains? response :structured_attributes))
+            (is (= {:dept {:source "user" :frozen false :value "sales"}}
+                   (:structured_attributes response)))))))))

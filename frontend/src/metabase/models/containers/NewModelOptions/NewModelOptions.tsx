@@ -5,12 +5,13 @@ import _ from "underscore";
 
 import { useListDatabasesQuery } from "metabase/api";
 import { DelayedLoadingSpinner } from "metabase/common/components/EntityPicker/components/LoadingSpinner";
-import { Grid } from "metabase/components/Grid";
+import { Grid } from "metabase/common/components/Grid";
 import CS from "metabase/css/core/index.css";
 import Databases from "metabase/entities/databases";
 import { useSelector } from "metabase/lib/redux";
 import * as Urls from "metabase/lib/urls";
 import NewModelOption from "metabase/models/components/NewModelOption";
+import { PLUGIN_DATA_STUDIO } from "metabase/plugins";
 import { NoDatabasesEmptyState } from "metabase/reference/databases/NoDatabasesEmptyState";
 import { getHasDataAccess, getHasNativeWrite } from "metabase/selectors/data";
 import { getLearnUrl, getSetting } from "metabase/selectors/settings";
@@ -34,13 +35,20 @@ const NewModelOptions = ({ location }: NewModelOptionsProps) => {
   const hasDataAccess = getHasDataAccess(databases);
   const hasNativeWrite = getHasNativeWrite(databases);
 
-  const lastUsedDatabaseId = useSelector(state =>
+  const lastUsedDatabaseId = useSelector((state) =>
     getSetting(state, "last-used-native-database-id"),
   );
 
-  const collectionId = Urls.extractEntityId(
+  const urlCollectionId = Urls.extractEntityId(
     location.query.collectionId as string,
   );
+
+  const libraryModelsCollection =
+    PLUGIN_DATA_STUDIO.useGetLibraryChildCollectionByType({
+      type: "library-models",
+    });
+
+  const collectionId = urlCollectionId || libraryModelsCollection?.id;
 
   const showMetabaseLinks = useSelector(getShowMetabaseLinks);
 
@@ -88,11 +96,11 @@ const NewModelOptions = ({ location }: NewModelOptionsProps) => {
               description={t`You can always fall back to a SQL or native query, which is a bit more manual.`}
               to={Urls.newQuestion({
                 mode: "query",
-                type: "native",
+                DEPRECATED_RAW_MBQL_type: "native",
                 creationType: "native_question",
                 cardType: "model",
                 collectionId,
-                databaseId: lastUsedDatabaseId || undefined,
+                DEPRECATED_RAW_MBQL_databaseId: lastUsedDatabaseId || undefined,
               })}
               width={180}
             />

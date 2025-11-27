@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { usePrevious } from "react-use";
 import _ from "underscore";
 
-import TippyPopover from "metabase/components/Popover/TippyPopover";
+import TippyPopover from "metabase/common/components/Popover/TippyPopover";
+import { useToggle } from "metabase/common/hooks/use-toggle";
 import { getParameterValues } from "metabase/dashboard/selectors";
 import Search from "metabase/entities/search";
-import { useToggle } from "metabase/hooks/use-toggle";
 import { getUrlTarget } from "metabase/lib/dom";
 import { useSelector } from "metabase/lib/redux";
 import { SearchResults } from "metabase/nav/components/search/SearchResults";
@@ -109,6 +109,7 @@ function LinkVizInner({
         dashboard,
         parameterValues,
         text: url,
+        urlEncode: true,
       }),
     [dashboard, dashcard, parameterValues, url],
   );
@@ -177,12 +178,12 @@ function LinkVizInner({
             value={url ?? ""}
             autoFocus={autoFocus}
             placeholder={"https://example.com"}
-            onChange={e => handleLinkChange(e.target.value)}
+            onChange={(e) => handleLinkChange(e.target.value)}
             onFocus={onFocusInput}
             // we need to debounce this or it may close the popover before the click event can fire
             onBlur={_.debounce(onBlurInput, 100)}
             // the dashcard really wants to turn all mouse events into drag events
-            onMouseDown={e => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           />
         </TippyPopover>
       </EditLinkCardWrapper>

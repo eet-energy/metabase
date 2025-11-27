@@ -1,20 +1,20 @@
+/* eslint-disable i18next/no-literal-string */
 import {
   type Dispatch,
   type ReactNode,
   type SetStateAction,
-  memo,
   useState,
 } from "react";
 import _ from "underscore";
 
+import { BulkActionBarPortal } from "metabase/common/components/BulkActionBar/BulkActionBar";
 import { EntityPickerModal } from "metabase/common/components/EntityPicker";
+import LegacyModal from "metabase/common/components/Modal";
+import ModalContent from "metabase/common/components/ModalContent";
+import LegacySelect, { Option } from "metabase/common/components/Select";
 import { Sidesheet } from "metabase/common/components/Sidesheet";
-import LegacyModal from "metabase/components/Modal";
-import ModalContent from "metabase/components/ModalContent";
-import Toaster from "metabase/components/Toaster";
-import { UndoListOverlay, UndoToast } from "metabase/containers/UndoListing";
-import LegacySelect, { Option } from "metabase/core/components/Select";
-import { PaletteCard } from "metabase/palette/components/Palette";
+import Toaster from "metabase/common/components/Toaster";
+import { UndoListOverlay } from "metabase/common/components/UndoListing";
 import {
   Box,
   Button,
@@ -29,6 +29,7 @@ import {
   Select as MantineSelect,
   Tooltip as MantineTooltip,
   type ModalProps,
+  Overlay,
   Paper,
   type PaperProps,
   Stack,
@@ -36,8 +37,6 @@ import {
   Title,
 } from "metabase/ui";
 import { createMockUndo } from "metabase-types/api/mocks";
-
-import { BulkActionBarPortal } from "../../../components/BulkActionBar/BulkActionBar";
 
 const LauncherGroup = ({
   title,
@@ -147,33 +146,37 @@ const _Launchers = ({
         </LegacySelect>
       </LauncherGroup>
       <LauncherGroup title="Toasts">
-        <Button onClick={() => setUndoCount(c => c + 1)}>
+        <Button onClick={() => setUndoCount((c) => c + 1)}>
           Undo-style toast
         </Button>
-        <Button onClick={() => setActionToastCount(c => c + 1)}>
+        <Button onClick={() => setActionToastCount((c) => c + 1)}>
           Action-style toast
         </Button>
-        <Button onClick={() => setToastCount(c => c + 1)}>
+        <Button onClick={() => setToastCount((c) => c + 1)}>
           Toaster-style toast
         </Button>
       </LauncherGroup>
       <LauncherGroup title="Modals">
-        <Button onClick={() => setMantineModalCount(c => c + 1)}>
+        <Button onClick={() => setMantineModalCount((c) => c + 1)}>
           Mantine Modal
         </Button>
         <MantineTooltip label="This kind of modal sets its title via a prop">
-          <Button onClick={() => setMantineModalWithTitlePropCount(c => c + 1)}>
+          <Button
+            onClick={() => setMantineModalWithTitlePropCount((c) => c + 1)}
+          >
             Mantine Modal variant
           </Button>
         </MantineTooltip>
-        <Button onClick={() => setLegacyModalCount(c => c + 1)}>
+        <Button onClick={() => setLegacyModalCount((c) => c + 1)}>
           Legacy modal
         </Button>
-        <Button onClick={() => setSidesheetCount(c => c + 1)}>Sidesheet</Button>
-        <Button onClick={() => setEntityPickerCount(c => c + 1)}>
+        <Button onClick={() => setSidesheetCount((c) => c + 1)}>
+          Sidesheet
+        </Button>
+        <Button onClick={() => setEntityPickerCount((c) => c + 1)}>
           Entity Picker
         </Button>
-        <Button onClick={() => setCommandPaletteCount(c => c + 1)}>
+        <Button onClick={() => setCommandPaletteCount((c) => c + 1)}>
           Command Palette
         </Button>
       </LauncherGroup>
@@ -216,9 +219,11 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
     <Stack p="lg">
       <Launchers />
       {undoCount > 0 && (
-        <UndoListOverlay>
-          <UndoToasts undoCount={undoCount} setUndoCount={setUndoCount} />
-        </UndoListOverlay>
+        <UndoListOverlay
+          undos={getToasts(undoCount)}
+          onUndo={() => setUndoCount((c) => c - 1)}
+          onDismiss={() => setUndoCount((c) => c - 1)}
+        />
       )}
       {Array.from({ length: actionToastCount }).map((_value, index) => (
         <BulkActionBarPortal
@@ -230,7 +235,8 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
           p="lg"
         >
           <CloseButton
-            onClick={() => setActionToastCount(c => c - 1)}
+            onClick={() => setActionToastCount((c) => c - 1)}
+            // eslint-disable-next-line no-color-literals
             c="#fff"
             bg="transparent"
           />
@@ -245,10 +251,10 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
           confirmText="Confirm"
           isShown={true}
           onDismiss={() => {
-            setToastCount(c => c - 1);
+            setToastCount((c) => c - 1);
           }}
           onConfirm={() => {
-            setToastCount(c => c - 1);
+            setToastCount((c) => c - 1);
           }}
           className=""
           fixed
@@ -261,7 +267,7 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
             isOpen
             key={`legacy-modal-${index}`}
             closeOnClickOutside
-            onClose={() => setLegacyModalCount(c => c - 1)}
+            onClose={() => setLegacyModalCount((c) => c - 1)}
             aria-labelledby={modalTitleId}
           >
             <ModalContent>
@@ -273,7 +279,9 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
                   <Box p="1rem 0">Legacy modal text content</Box>
                   {enableNesting && <Launchers />}
                 </Stack>
-                <CloseButton onClick={() => setLegacyModalCount(c => c - 1)} />
+                <CloseButton
+                  onClick={() => setLegacyModalCount((c) => c - 1)}
+                />
               </Group>
             </ModalContent>
           </LegacyModal>
@@ -283,7 +291,7 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
         <SimpleModal
           key={`mantine-modal-${index}`}
           title={`Mantine Modal content`}
-          onClose={() => setMantineModalCount(c => c - 1)}
+          onClose={() => setMantineModalCount((c) => c - 1)}
         >
           <Stack gap="md">
             <Text>Mantine Modal text content</Text>
@@ -297,7 +305,7 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
             opened
             key={`mantine-modal-with-title-prop-${index}`}
             title="Mantine Modal content"
-            onClose={() => setMantineModalWithTitlePropCount(c => c - 1)}
+            onClose={() => setMantineModalWithTitlePropCount((c) => c - 1)}
           >
             <Text>Mantine Modal text content</Text>
             {enableNesting && <Launchers />}
@@ -308,7 +316,7 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
         <Sidesheet
           key={`sidesheet-${index}`}
           isOpen
-          onClose={() => setSidesheetCount(c => c - 1)}
+          onClose={() => setSidesheetCount((c) => c - 1)}
           title="Sidesheet content"
         >
           Sidesheet text content
@@ -323,11 +331,11 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
           canSelectItem={false}
           tabs={[]}
           onClose={() => {
-            setEntityPickerCount(c => c - 1);
+            setEntityPickerCount((c) => c - 1);
           }}
           onItemSelect={_.noop}
           onConfirm={() => {
-            setEntityPickerCount(c => c - 1);
+            setEntityPickerCount((c) => c - 1);
           }}
         >
           <Box p="lg">Entity Picker text content</Box>
@@ -340,15 +348,18 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
       ))}
       {Array.from({ length: commandPaletteCount }).map((_value, index) => {
         const modalTitleId = `command-palette-title-${index}`;
+        // This isn't a command palette per say, but this does test that "<Overlay>" works as we expect
         return (
-          <PaletteCard
+          <Overlay
             key={`command-palette-${index}`}
+            //@ts-expect-error We are doing a bad job with polymophic mantine component types, but this is fine
             onClick={() => {
-              setCommandPaletteCount(c => c - 1);
+              setCommandPaletteCount((c) => c - 1);
             }}
             aria-labelledby={modalTitleId}
+            component={Box}
           >
-            <div onClick={e => e.stopPropagation()}>
+            <div onClick={(e) => e.stopPropagation()}>
               <Flex p="lg">
                 <Stack>
                   <Title id={modalTitleId} order={3}>
@@ -359,7 +370,7 @@ export const OverlaysDemo = ({ enableNesting }: OverlaysDemoProps) => {
                 </Stack>
               </Flex>
             </div>
-          </PaletteCard>
+          </Overlay>
         );
       })}
     </Stack>
@@ -399,26 +410,10 @@ const SimpleModal = ({
   </MantineModal.Root>
 );
 
-const UndoToasts = memo(function UndoToasts({
-  undoCount,
-  setUndoCount,
-}: {
-  undoCount: number;
-  setUndoCount: Dispatch<SetStateAction<number>>;
-}) {
-  return (
-    <>
-      {Array.from({ length: undoCount }).map((_, index) => (
-        <UndoToast
-          undo={createMockUndo({
-            message: `Undo-style toast text content`,
-          })}
-          onUndo={() => {}}
-          onDismiss={() => setUndoCount(c => c - 1)}
-          key={`undo-toast-${index}`}
-          aria-label="Undo-style toast content"
-        />
-      ))}
-    </>
+function getToasts(length: number) {
+  return Array.from({ length }).map(() =>
+    createMockUndo({
+      message: `Undo-style toast text content`,
+    }),
   );
-});
+}

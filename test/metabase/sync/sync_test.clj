@@ -7,13 +7,13 @@
   (:require
    [clojure.test :refer :all]
    [metabase.driver :as driver]
-   [metabase.models.field-values :as field-values]
    [metabase.sync.sync :as sync]
    [metabase.sync.util :as sync-util]
    [metabase.test :as mt]
    [metabase.test.mock.util :as mock.util]
    [metabase.test.util :as tu]
    [metabase.util :as u]
+   [metabase.warehouse-schema.models.field-values :as field-values]
    [toucan2.core :as t2]))
 
 (set! *warn-on-reflection* true)
@@ -74,7 +74,7 @@
                         :database-position 1}}
              :description ""}})
 
-(defmethod driver/describe-database ::sync-test
+(defmethod driver/describe-database* ::sync-test
   [& _]
   {:tables (set (for [table (vals (sync-test-tables))]
                   (dissoc table :fields)))})
@@ -97,8 +97,8 @@
   true)
 
 (defmethod driver/mbql->native ::sync-test
-  [_ query]
-  query)
+  [_ _query]
+  {:query "SQL string"})
 
 (defn- ^:dynamic *execute-response*
   [query respond]
@@ -123,8 +123,10 @@
     :db_id       true
     :entity_type :entity/GenericTable
     :id          true
-    :entity_id   false
-    :updated_at  true}))
+    :archived_at false
+    :deactivated_at false
+    :updated_at  true
+    :owner_user_id false}))
 
 (defn- field-defaults []
   (merge
@@ -135,7 +137,6 @@
     :fk_target_field_id  false
     :database_is_auto_increment false
     :id                  true
-    :entity_id           false
     :last_analyzed       false
     :parent_id           false
     :position            0
@@ -324,7 +325,7 @@
 
 (driver/register! ::sync-database-error-test)
 
-(defmethod driver/describe-database ::sync-database-error-test
+(defmethod driver/describe-database* ::sync-database-error-test
   [_driver _database]
   (throw (doto (Exception. "OOPS!")
            (.setStackTrace (into-array StackTraceElement [])))))

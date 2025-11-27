@@ -1,15 +1,18 @@
-import CodeMirror, {
-  type ReactCodeMirrorRef,
-  type ViewUpdate,
-} from "@uiw/react-codemirror";
+import type { ViewUpdate } from "@uiw/react-codemirror";
 import {
   forwardRef,
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
 } from "react";
+import _ from "underscore";
 
+import {
+  CodeMirror,
+  type CodeMirrorRef,
+} from "metabase/common/components/CodeMirror";
 import { isEventOverElement } from "metabase/lib/dom";
 import * as Lib from "metabase-lib";
 import type { CardId } from "metabase-types/api";
@@ -18,11 +21,16 @@ import type { SelectionRange } from "../types";
 
 export type CodeMirrorEditorProps = {
   query: Lib.Query;
-  onChange?: (queryText: string) => void;
+  proposedQuery?: Lib.Query;
+  highlightedLineNumbers?: number[];
+  placeholder?: string;
   readOnly?: boolean;
+  onChange?: (queryText: string) => void;
+  onFormatQuery?: () => void;
+  onRunQuery?: () => void;
   onCursorMoveOverCardTag?: (id: CardId) => void;
   onRightClickSelection?: () => void;
-  onSelectionChange?: (range: SelectionRange) => void;
+  onSelectionChange?: (range: SelectionRange[]) => void;
 };
 
 export interface CodeMirrorEditorRef {
@@ -32,28 +40,42 @@ export interface CodeMirrorEditorRef {
 
 import S from "./CodeMirrorEditor.module.css";
 import { useExtensions } from "./extensions";
-import { convertSelectionToRange, matchCardIdAtCursor } from "./util";
+import {
+  getPlaceholderText,
+  getSelectedRanges,
+  matchCardIdAtCursor,
+} from "./util";
 
 export const CodeMirrorEditor = forwardRef<
   CodeMirrorEditorRef,
   CodeMirrorEditorProps
->(function CodeMirrorEditor(props, ref) {
-  const editor = useRef<ReactCodeMirrorRef>(null);
-  const {
+>(function CodeMirrorEditor(
+  {
     query,
-    onChange,
+    proposedQuery,
+    highlightedLineNumbers,
+    placeholder = getPlaceholderText(Lib.engine(query)),
     readOnly,
+    onChange,
+    onRunQuery,
     onSelectionChange,
     onRightClickSelection,
     onCursorMoveOverCardTag,
-  } = props;
-
-  const extensions = useExtensions(query);
+    onFormatQuery,
+  },
+  ref,
+) {
+  const editorRef = useRef<CodeMirrorRef>(null);
+  const extensions = useExtensions({
+    query,
+    diff: !!proposedQuery,
+    onRunQuery,
+  });
 
   useImperativeHandle(ref, () => {
     return {
       focus() {
-        editor.current?.editor?.focus();
+        editorRef.current?.editor?.focus();
       },
       getSelectionTarget() {
         return document.querySelector(".cm-selectionBackground");
@@ -64,28 +86,23 @@ export const CodeMirrorEditor = forwardRef<
   const handleUpdate = useCallback(
     (update: ViewUpdate) => {
       // handle selection changes
-      const value = update.state.doc.toString();
       if (onSelectionChange) {
-        const beforeRange = convertSelectionToRange(
-          update.startState.doc.toString(),
-          update.startState.selection.main,
-        );
-        const afterRange = convertSelectionToRange(
-          value,
-          update.state.selection.main,
-        );
+        const beforeRanges = getSelectedRanges(update.startState);
+        const afterRanges = getSelectedRanges(update.state);
 
-        if (
-          beforeRange.start !== afterRange.start ||
-          beforeRange.end !== afterRange.end
-        ) {
-          onSelectionChange(afterRange);
+        if (!_.isEqual(beforeRanges, afterRanges)) {
+          onSelectionChange(afterRanges);
         }
       }
       if (onCursorMoveOverCardTag) {
-        const cardId = matchCardIdAtCursor(update.state);
-        if (cardId !== null) {
-          onCursorMoveOverCardTag(cardId);
+        if (
+          update.startState.selection.main.head !==
+          update.state.selection.main.head
+        ) {
+          const cardId = matchCardIdAtCursor(update.state);
+          if (cardId !== null) {
+            onCursorMoveOverCardTag(cardId);
+          }
         }
       }
     },
@@ -94,7 +111,7 @@ export const CodeMirrorEditor = forwardRef<
 
   useEffect(() => {
     function handler(evt: MouseEvent) {
-      const selection = editor.current?.state?.selection.main;
+      const selection = editorRef.current?.state?.selection.main;
       if (!selection) {
         return;
       }
@@ -103,7 +120,7 @@ export const CodeMirrorEditor = forwardRef<
         document.querySelectorAll(".cm-selectionBackground"),
       );
 
-      if (selections.some(selection => isEventOverElement(evt, selection))) {
+      if (selections.some((selection) => isEventOverElement(evt, selection))) {
         evt.preventDefault();
         onRightClickSelection?.();
       }
@@ -112,18 +129,31 @@ export const CodeMirrorEditor = forwardRef<
     return () => document.removeEventListener("contextmenu", handler);
   }, [onRightClickSelection]);
 
+  const highlightedRanges = useMemo(
+    () => highlightedLineNumbers?.map((lineNumber) => ({ line: lineNumber })),
+    [highlightedLineNumbers],
+  );
+
+  const value = useMemo(() => {
+    return Lib.rawNativeQuery(proposedQuery ?? query);
+  }, [proposedQuery, query]);
+
   return (
     <CodeMirror
-      ref={editor}
+      ref={editorRef}
       data-testid="native-query-editor"
       className={S.editor}
       extensions={extensions}
-      value={Lib.rawNativeQuery(query)}
+      value={value}
       readOnly={readOnly}
       onChange={onChange}
       height="100%"
       onUpdate={handleUpdate}
       autoFocus
+      autoCorrect="off"
+      placeholder={placeholder}
+      highlightRanges={highlightedRanges}
+      onFormat={onFormatQuery}
     />
   );
 });

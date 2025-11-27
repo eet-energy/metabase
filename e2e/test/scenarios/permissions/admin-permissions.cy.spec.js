@@ -19,7 +19,7 @@ describe("scenarios > admin > permissions", { tags: "@OSS" }, () => {
   });
 
   it("shows hidden tables", () => {
-    cy.visit(`/admin/datamodel/database/${SAMPLE_DB_ID}`);
+    H.DataModel.visit({ databaseId: SAMPLE_DB_ID });
     cy.icon("eye_crossed_out").eq(0).click();
 
     cy.visit(
@@ -55,7 +55,7 @@ describe("scenarios > admin > permissions", { tags: "@OSS" }, () => {
     cy.findAllByRole("option").contains("Query builder and native").click();
 
     // stub out the PUT and save
-    cy.intercept("PUT", "/api/permissions/graph", req => {
+    cy.intercept("PUT", "/api/permissions/graph", (req) => {
       req.reply(500, "Server error");
     });
     // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
@@ -390,7 +390,7 @@ describe("scenarios > admin > permissions", { tags: "@OSS" }, () => {
           "Query builder and native",
         );
 
-        cy.get("@graph").then(data => {
+        cy.get("@graph").then((data) => {
           cy.request("PUT", "/api/permissions/graph", {
             groups: {},
             revision: data.response.body.revision,
@@ -416,7 +416,7 @@ describe("scenarios > admin > permissions", { tags: "@OSS" }, () => {
           "Query builder and native",
         );
 
-        cy.get("@graph").then(data => {
+        cy.get("@graph").then((data) => {
           cy.request("PUT", "/api/permissions/graph", {
             groups: {},
             revision: data.response.body.revision,
@@ -436,7 +436,7 @@ describe("scenarios > admin > permissions", () => {
   beforeEach(() => {
     H.restore();
     cy.signInAsAdmin();
-    H.setTokenFeatures("all");
+    H.activateToken("pro-self-hosted");
   });
 
   it("Visualization and Settings query builder buttons are not visible for questions that use blocked data sources", () => {
@@ -456,11 +456,13 @@ describe("scenarios > admin > permissions", () => {
     cy.signIn("nodata");
     H.visitQuestion(ORDERS_QUESTION_ID);
 
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.findByText("There was a problem with your question");
-    cy.findByTestId("viz-settings-button").should("not.exist");
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.findByText("Visualization").should("not.exist");
+    H.queryBuilderMain().findByText(
+      "Sorry, you don't have permission to run this query.",
+    );
+    H.queryBuilderFooter()
+      .findByTestId("viz-settings-button")
+      .should("not.exist");
+    H.queryBuilderFooter().findByText("Visualization").should("not.exist");
   });
 
   it("shows permission error for cards that use blocked data sources", () => {
@@ -585,8 +587,8 @@ describe("scenarios > admin > permissions", () => {
     };
 
     // When the app calls for session properties, give them a modified API response
-    cy.intercept("/api/session/properties", req => {
-      req.continue(res => {
+    cy.intercept("/api/session/properties", (req) => {
+      req.continue((res) => {
         res.body = { ...res.body, ...tempState };
       });
     }).as("sessionProps");
@@ -602,8 +604,7 @@ describe("scenarios > admin > permissions", () => {
     });
 
     cy.visit("/admin/permissions/");
-    //Both the command palette and the admin app call refresh settings
-    cy.wait(["@sessionProps", "@sessionProps"]);
+    cy.wait("@sessionProps");
 
     cy.findByRole("dialog", { name: /permissions may look different/ })
       .findByRole("button", { name: "Got it" })
@@ -637,8 +638,8 @@ describe("scenarios > admin > permissions", () => {
     };
 
     // When the app calls for session properties, give them a modified API response
-    cy.intercept("/api/session/properties", req => {
-      req.continue(res => {
+    cy.intercept("/api/session/properties", (req) => {
+      req.continue((res) => {
         res.body = { ...res.body, ...tempState };
       });
     }).as("sessionProps");
@@ -650,8 +651,7 @@ describe("scenarios > admin > permissions", () => {
     });
 
     cy.visit("/admin/permissions/");
-    //Both the command palette and the admin app call refresh settings
-    cy.wait(["@sessionProps", "@sessionProps"]);
+    cy.wait("@sessionProps");
 
     cy.findByRole("dialog", { name: /permissions may look different/ })
       .findByRole("button", { name: "Got it" })
@@ -695,7 +695,7 @@ describe("scenarios > admin > permissions", () => {
         cy.button("Yes").click();
       });
 
-      cy.wait("@updateGraph").then(interception => {
+      cy.wait("@updateGraph").then((interception) => {
         const requestGroupIds = Object.keys(interception.request.body.groups);
         const responseGroupIds = Object.keys(interception.response.body.groups);
         expect(requestGroupIds).to.deep.equal(responseGroupIds);
@@ -729,7 +729,7 @@ describe("scenarios > admin > permissions", () => {
         cy.button("Yes").click();
       });
 
-      cy.wait("@updateGraph").then(interception => {
+      cy.wait("@updateGraph").then((interception) => {
         cy.log("should skip graph in request and response");
         expect(interception.response.body).to.not.haveOwnProperty("groups");
       });
@@ -748,7 +748,7 @@ describe("scenarios > admin > permissions", () => {
         cy.button("Yes").click();
       });
 
-      cy.wait("@updateGraph").then(interception => {
+      cy.wait("@updateGraph").then((interception) => {
         cy.log("should not send previously saved edits");
         expect(interception.request.body.groups).to.not.haveOwnProperty(
           USER_GROUPS.ALL_USERS_GROUP,

@@ -1,9 +1,11 @@
-import "regenerator-runtime/runtime";
+import "@mantine/core/styles.css";
+import "@mantine/dates/styles.css";
+import "@xyflow/react/dist/style.css";
 
 // This is conditionally aliased in the webpack config.
 // If EE isn't enabled, it loads an empty file.
 // Should be imported before any other metabase import
-import "ee-overrides"; // eslint-disable-line import/no-duplicates
+import "ee-overrides";
 
 import "metabase/lib/dayjs";
 
@@ -22,25 +24,25 @@ import "metabase/plugins/builtin";
 
 // This is conditionally aliased in the webpack config.
 // If EE isn't enabled, it loads an empty file.
-import "ee-plugins"; // eslint-disable-line import/no-duplicates
 
 // Set nonce for mantine v6 deps
 import "metabase/lib/csp";
 
 import { createHistory } from "history";
 import { DragDropContextProvider } from "react-dnd";
-import HTML5Backend from "react-dnd-html5-backend";
 import { createRoot } from "react-dom/client";
 import { Router, useRouterHistory } from "react-router";
 import { syncHistoryWithStore } from "react-router-redux";
 
+import { initializePlugins } from "ee-plugins";
+import { ModifiedBackend } from "metabase/common/components/dnd/ModifiedBackend";
 import { createTracker } from "metabase/lib/analytics";
 import api from "metabase/lib/api";
 import { initializeEmbedding } from "metabase/lib/embed";
 import { captureConsoleErrors } from "metabase/lib/errors";
 import { MetabaseReduxProvider } from "metabase/lib/redux/custom-context";
 import MetabaseSettings from "metabase/lib/settings";
-import { PLUGIN_APP_INIT_FUNCTIONS } from "metabase/plugins";
+import { PLUGIN_APP_INIT_FUNCTIONS, PLUGIN_METABOT } from "metabase/plugins";
 import { refreshSiteSettings } from "metabase/redux/settings";
 import { EmotionCacheProvider } from "metabase/styled-components/components/EmotionCacheProvider";
 import { GlobalStyles } from "metabase/styled-components/containers/GlobalStyles";
@@ -59,10 +61,12 @@ const browserHistory = useRouterHistory(createHistory)({
   basename: BASENAME,
 });
 
+initializePlugins();
 function _init(reducers, getRoutes, callback) {
   const store = getStore(reducers, browserHistory);
   const routes = getRoutes(store);
   const history = syncHistoryWithStore(browserHistory, store);
+  const MetabotProvider = PLUGIN_METABOT.getMetabotProvider();
 
   createTracker(store);
 
@@ -73,10 +77,12 @@ function _init(reducers, getRoutes, callback) {
   root.render(
     <MetabaseReduxProvider store={store}>
       <EmotionCacheProvider>
-        <DragDropContextProvider backend={HTML5Backend} context={{ window }}>
+        <DragDropContextProvider backend={ModifiedBackend} context={{ window }}>
           <ThemeProvider>
             <GlobalStyles />
-            <Router history={history}>{routes}</Router>
+            <MetabotProvider>
+              <Router history={history}>{routes}</Router>
+            </MetabotProvider>
           </ThemeProvider>
         </DragDropContextProvider>
       </EmotionCacheProvider>
@@ -87,7 +93,7 @@ function _init(reducers, getRoutes, callback) {
 
   store.dispatch(refreshSiteSettings());
 
-  PLUGIN_APP_INIT_FUNCTIONS.forEach(init => init());
+  PLUGIN_APP_INIT_FUNCTIONS.forEach((init) => init());
 
   window.Metabase = window.Metabase || {};
   window.Metabase.store = store;

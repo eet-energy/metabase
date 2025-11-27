@@ -11,7 +11,7 @@ import { DatePicker } from "./DatePicker";
 import "metabase/public/components/EmbedFrame/EmbedFrame.module.css";
 
 export default {
-  title: "Parameters/DatePicker",
+  title: "Components/Parameters/DatePicker",
   component: DatePicker,
 } as Meta<typeof DatePicker>;
 
@@ -36,7 +36,6 @@ function withMockDate(StoryFn: StoryFn) {
 }
 
 type CustomStoryProps = {
-  theme?: "light" | "dark";
   snapshotSize?: {
     width: number;
     height: number;
@@ -44,17 +43,7 @@ type CustomStoryProps = {
 };
 const Template: StoryFn<
   ComponentProps<typeof DatePicker> & CustomStoryProps
-> = args => {
-  const isDarkTheme = args.theme === "dark";
-
-  useEffect(() => {
-    if (isDarkTheme) {
-      document.documentElement.setAttribute("data-metabase-theme", "night");
-    } else {
-      document.documentElement.setAttribute("data-metabase-theme", "light");
-    }
-  }, [isDarkTheme]);
-
+> = (args) => {
   return (
     <>
       <Popover opened position="bottom-start" withinPortal={false}>
@@ -134,7 +123,7 @@ export const ExcludeDayOfWeekDarkTheme = merge(ExcludeDayOfWeek, {
 export const RelativeCurrent = {
   render: Template,
   args: {
-    value: { type: "relative", unit: "day", value: "current" },
+    value: { type: "relative", unit: "day", value: 0 },
   },
   play: async ({ canvasElement }: { canvasElement: HTMLCanvasElement }) => {
     const canvas = within(canvasElement);

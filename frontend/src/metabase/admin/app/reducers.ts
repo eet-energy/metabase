@@ -2,16 +2,13 @@ import { createReducer } from "@reduxjs/toolkit";
 import { t } from "ttag";
 
 import { combineReducers } from "metabase/lib/redux";
-import Settings from "metabase/lib/settings";
 import { isNotNull } from "metabase/lib/types";
 import {
   PLUGIN_ADMIN_ALLOWED_PATH_GETTERS,
-  PLUGIN_ADMIN_NAV_ITEMS,
+  PLUGIN_METABOT,
 } from "metabase/plugins";
 import { refreshCurrentUser } from "metabase/redux/user";
 import type { AdminPath, AdminPathKey } from "metabase-types/store";
-
-import { disableNotice } from "./actions";
 
 export const getAdminPaths: () => AdminPath[] = () => {
   const items: AdminPath[] = [
@@ -25,6 +22,12 @@ export const getAdminPaths: () => AdminPath[] = () => {
       path: "/admin/databases",
       key: "databases",
     },
+    {
+      name: t`Embedding`,
+      path: "/admin/embedding",
+      key: "embedding",
+    },
+    ...PLUGIN_METABOT.getAdminPaths(),
     {
       name: t`Table Metadata`,
       path: "/admin/datamodel",
@@ -52,22 +55,16 @@ export const getAdminPaths: () => AdminPath[] = () => {
     },
   ];
 
-  items.push(...PLUGIN_ADMIN_NAV_ITEMS, {
-    name: t`Troubleshooting`,
-    path: "/admin/troubleshooting",
-    key: "troubleshooting",
-  });
-
   return items;
 };
 
-const paths = createReducer(getAdminPaths(), builder => {
+const paths = createReducer(getAdminPaths(), (builder) => {
   builder.addCase(refreshCurrentUser.fulfilled, (state, { payload: user }) => {
     if (user?.is_superuser) {
       return state;
     }
 
-    const allowedPaths = PLUGIN_ADMIN_ALLOWED_PATH_GETTERS.map(getter => {
+    const allowedPaths = PLUGIN_ADMIN_ALLOWED_PATH_GETTERS.map((getter) => {
       return getter(user);
     })
       .flat()
@@ -77,19 +74,11 @@ const paths = createReducer(getAdminPaths(), builder => {
       }, new Set<AdminPathKey>());
 
     return state
-      .filter(path => (allowedPaths.has(path.key) ? path : null))
+      .filter((path) => (allowedPaths.has(path.key) ? path : null))
       .filter(isNotNull);
   });
 });
 
-const isNoticeEnabled = createReducer(
-  Settings.deprecationNoticeEnabled(),
-  builder => {
-    builder.addCase(disableNotice.fulfilled, () => false);
-  },
-);
-
 export const appReducer = combineReducers({
-  isNoticeEnabled,
   paths,
 });

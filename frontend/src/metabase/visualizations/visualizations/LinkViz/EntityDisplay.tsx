@@ -1,6 +1,6 @@
 import { t } from "ttag";
 
-import { color } from "metabase/lib/colors";
+import Markdown from "metabase/common/components/Markdown";
 import { isEmpty } from "metabase/lib/validate";
 import { Icon } from "metabase/ui";
 
@@ -28,7 +28,11 @@ export const EntityDisplay = ({
         <Icon
           name="info"
           color="var(--mb-color-text-light)"
-          tooltip={entity.description}
+          tooltip={
+            <Markdown dark disallowHeading unstyleLinks lineClamp={8}>
+              {entity.description}
+            </Markdown>
+          }
         />
       )}
     </EntityDisplayContainer>
@@ -51,7 +55,7 @@ export const UrlLinkDisplay = ({ url }: { url?: string }) => {
   return (
     <EntityDisplayContainer>
       <LeftContainer>
-        <Icon color={color("brand")} name={urlIcon} />
+        <Icon c={"brand"} name={urlIcon} />
         <EllipsifiedEntityContainer>
           {!isEmpty(url) ? url : t`Choose a link`}
         </EllipsifiedEntityContainer>

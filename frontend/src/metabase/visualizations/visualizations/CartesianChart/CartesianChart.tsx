@@ -7,9 +7,10 @@ import {
   useRef,
   useState,
 } from "react";
+import React from "react";
 import { useSet } from "react-use";
 
-import { isDesktopSafari } from "metabase/lib/browser";
+import { isWebkit } from "metabase/lib/browser";
 import { ChartRenderingErrorBoundary } from "metabase/visualizations/components/ChartRenderingErrorBoundary";
 import { ResponsiveEChartsRenderer } from "metabase/visualizations/components/EChartsRenderer";
 import { LegendCaption } from "metabase/visualizations/components/legend/LegendCaption";
@@ -28,6 +29,9 @@ import { useChartEvents } from "metabase/visualizations/visualizations/Cartesian
 import { useChartDebug } from "./use-chart-debug";
 import { useModelsAndOption } from "./use-models-and-option";
 import { getGridSizeAdjustedSettings, validateChartModel } from "./utils";
+
+const HIDE_X_AXIS_LABEL_WIDTH_THRESHOLD = 360;
+const HIDE_Y_AXIS_LABEL_WIDTH_THRESHOLD = 200;
 
 function _CartesianChart(props: VisualizationProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,20 +53,30 @@ function _CartesianChart(props: VisualizationProps) {
     showTitle,
     headerIcon,
     actionButtons,
+    isDashboard,
+    isEditing,
     isQueryBuilder,
+    isVisualizerViz,
     isFullscreen,
     hovered,
     onChangeCardAndRun,
     onHoverChange,
     canToggleSeriesVisibility,
-    canRemoveSeries,
-    onRemoveSeries,
+    titleMenuItems,
   } = props;
 
-  const settings = useMemo(
-    () => getGridSizeAdjustedSettings(originalSettings, gridSize),
-    [originalSettings, gridSize],
-  );
+  const settings = useMemo(() => {
+    const settings = getGridSizeAdjustedSettings(originalSettings, gridSize);
+    if (isDashboard) {
+      if (outerWidth <= HIDE_X_AXIS_LABEL_WIDTH_THRESHOLD) {
+        settings["graph.y_axis.labels_enabled"] = false;
+      }
+      if (outerHeight <= HIDE_Y_AXIS_LABEL_WIDTH_THRESHOLD) {
+        settings["graph.x_axis.labels_enabled"] = false;
+      }
+    }
+    return settings;
+  }, [originalSettings, gridSize, isDashboard, outerWidth, outerHeight]);
 
   const { chartModel, timelineEventsModel, option } = useModelsAndOption(
     {
@@ -94,12 +108,12 @@ function _CartesianChart(props: VisualizationProps) {
     chartRef.current = chart;
 
     // HACK: clip paths cause glitches in Safari on multiseries line charts on dashboards (metabase#51383)
-    if (isDesktopSafari()) {
+    if (isWebkit()) {
       chartRef.current.on("finished", () => {
         const svg = containerRef.current?.querySelector("svg");
         if (svg) {
           const clipPaths = svg.querySelectorAll('defs > clipPath[id^="zr"]');
-          clipPaths.forEach(cp => cp.remove());
+          clipPaths.forEach((cp) => cp.setAttribute("id", ""));
         }
       });
     }
@@ -120,6 +134,7 @@ function _CartesianChart(props: VisualizationProps) {
 
   const { onSelectSeries, onOpenQuestion, eventHandlers } = useChartEvents(
     chartRef,
+    containerRef,
     chartModel,
     timelineEventsModel,
     option,
@@ -130,7 +145,12 @@ function _CartesianChart(props: VisualizationProps) {
     setChartSize({ width, height });
   }, []);
 
-  const canSelectTitle = !!onChangeCardAndRun;
+  // We can't navigate a user to a particular card from a visualizer viz,
+  // so title selection is disabled in this case
+  const canSelectTitle =
+    !!onChangeCardAndRun &&
+    (!isVisualizerViz || React.Children.count(titleMenuItems) === 1);
+
   const seriesColorsCss = useCartesianChartSeriesColorsClasses(
     chartModel,
     settings,
@@ -142,15 +162,17 @@ function _CartesianChart(props: VisualizationProps) {
     <CartesianChartRoot isQueryBuilder={isQueryBuilder}>
       {showTitle && (
         <LegendCaption
-          title={settings["card.title"]}
+          title={settings["card.title"] ?? card.name}
           description={description}
           icon={headerIcon}
           actionButtons={actionButtons}
+          hasInfoTooltip={!isDashboard || !isEditing}
           getHref={canSelectTitle ? getHref : undefined}
           onSelectTitle={
             canSelectTitle ? () => onOpenQuestion(card.id) : undefined
           }
           width={outerWidth}
+          titleMenuItems={titleMenuItems}
         />
       )}
       <CartesianChartLegendLayout
@@ -165,8 +187,6 @@ function _CartesianChart(props: VisualizationProps) {
         onToggleSeriesVisibility={
           canToggleSeriesVisibility ? handleToggleSeriesVisibility : undefined
         }
-        canRemoveSeries={canRemoveSeries}
-        onRemoveSeries={onRemoveSeries}
         onHoverChange={onHoverChange}
         width={outerWidth}
         height={outerHeight}

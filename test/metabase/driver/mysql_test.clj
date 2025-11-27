@@ -7,19 +7,25 @@
    [honey.sql :as sql]
    [metabase.actions.error :as actions.error]
    [metabase.actions.models :as action]
-   [metabase.db.metadata-queries :as metadata-queries]
    [metabase.driver :as driver]
+   [metabase.driver.common.table-rows-sample :as table-rows-sample]
    [metabase.driver.mysql :as mysql]
    [metabase.driver.mysql.actions :as mysql.actions]
    [metabase.driver.mysql.ddl :as mysql.ddl]
    [metabase.driver.sql-jdbc.actions :as sql-jdbc.actions]
    [metabase.driver.sql-jdbc.actions-test :as sql-jdbc.actions-test]
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
+   [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
+   [metabase.driver.sql-jdbc.sync.describe-database :as sql-jdbc.describe-database]
+   [metabase.driver.sql-jdbc.sync.interface :as sql-jdbc.sync.interface]
    [metabase.driver.sql.query-processor :as sql.qp]
+   [metabase.lib.core :as lib]
+   [metabase.lib.metadata :as lib.metadata]
    [metabase.query-processor :as qp]
    [metabase.query-processor-test.string-extracts-test :as string-extracts-test]
    [metabase.query-processor.compile :as qp.compile]
+   ^{:clj-kondo/ignore [:deprecated-namespace]} [metabase.query-processor.store :as qp.store]
    [metabase.sync.analyze.fingerprint :as sync.fingerprint]
    [metabase.sync.core :as sync]
    [metabase.sync.sync-metadata.tables :as sync-tables]
@@ -40,21 +46,13 @@
                       ;; 2. Make sure we're in Honey SQL 2 mode for all the little SQL snippets we're compiling in these
                       ;;    tests.
                       (binding [sync-util/*log-exceptions-and-continue?* false]
-                        (thunk))))
-
-(defn drop-if-exists-and-create-db!
-  "Drop a MySQL database named `db-name` if it already exists; then create a new empty one with that name."
-  [db-name]
-  (let [spec (sql-jdbc.conn/connection-details->spec :mysql (tx/dbdef->connection-details :mysql :server nil))]
-    (doseq [sql [(format "DROP DATABASE IF EXISTS %s;" db-name)
-                 (format "CREATE DATABASE %s;" db-name)]]
-      (jdbc/execute! spec [sql]))))
+                        (mt/with-test-user :rasta (thunk)))))
 
 (deftest all-zero-dates-test
   (mt/test-driver :mysql
     (testing (str "MySQL allows 0000-00-00 dates, but JDBC does not; make sure that MySQL is converting them to NULL "
                   "when returning them like we asked")
-      (drop-if-exists-and-create-db! "all_zero_dates")
+      (tx/drop-if-exists-and-create-db! driver/*driver* "all_zero_dates")
       ;; Create Table & add data
       (let [details (tx/dbdef->connection-details :mysql :db {:database-name "all_zero_dates"})
             spec    (-> (sql-jdbc.conn/connection-details->spec :mysql details)
@@ -76,8 +74,8 @@
 (deftest multiple-schema-test
   (testing "Make sure that we filter databases (schema) with :db or :dbname (#50072)"
     (mt/test-driver :mysql
-      (drop-if-exists-and-create-db! "dbone")
-      (drop-if-exists-and-create-db! "dbtwo")
+      (tx/drop-if-exists-and-create-db! driver/*driver* "dbone")
+      (tx/drop-if-exists-and-create-db! driver/*driver* "dbtwo")
       (doseq [dbname ["dbone" "dbtwo"]
               :let [details (tx/dbdef->connection-details :mysql :db {:database-name dbname})
                     spec    (sql-jdbc.conn/connection-details->spec :mysql details)]]
@@ -151,7 +149,7 @@
       ;; trigger a full sync on this database so fields are categorized correctly
       (sync/sync-database! (mt/db))
       (testing "By default TINYINT(1) should be a boolean"
-        (is (= #{{:name "number-of-cans", :base_type :type/Boolean, :semantic_type :type/Category}
+        (is (= #{{:name "number-of-cans", :base_type :type/Boolean, :semantic_type nil}
                  {:name "id", :base_type :type/Integer, :semantic_type :type/PK}
                  {:name "thing", :base_type :type/Text, :semantic_type :type/Category}}
                (db->fields (mt/db)))))
@@ -182,10 +180,10 @@
             fields (t2/select :model/Field :table_id (u/id table) :name "year_column")]
         (testing "Can select from this table"
           (is (= [[2001] [2002] [1999]]
-                 (metadata-queries/table-rows-sample table fields (constantly conj)))))
+                 (table-rows-sample/table-rows-sample table fields (constantly conj)))))
         (testing "We can fingerprint this table"
           (is (= 1
-                 (:updated-fingerprints (#'sync.fingerprint/fingerprint-table! table fields)))))))))
+                 (:updated-fingerprints (#'sync.fingerprint/fingerprint-fields! table fields)))))))))
 
 (deftest db-default-timezone-test
   (mt/test-driver :mysql
@@ -315,7 +313,7 @@
                    (mt/first-row
                     (qp/process-query
                      (assoc (mt/native-query
-                              {:query (format "SELECT timediff(current_timestamp + INTERVAL %s, current_timestamp)" interval)})
+                             {:query (format "SELECT timediff(current_timestamp + INTERVAL %s, current_timestamp)" interval)})
                             ;; disable the middleware that normally converts `LocalTime` to `Strings` so we can verify
                             ;; our driver is actually doing the right thing
                             :middleware {:format-rows? false})))))))))))
@@ -328,7 +326,7 @@
 (deftest system-versioned-tables-test
   (mt/test-driver :mysql
     (testing "system versioned tables appear during a sync"
-      (drop-if-exists-and-create-db! "versioned_tables")
+      (tx/drop-if-exists-and-create-db! driver/*driver* "versioned_tables")
       ;; Create Table & add data
       (let [details (tx/dbdef->connection-details :mysql :db {:database-name "versioned_tables"})
             spec    (sql-jdbc.conn/connection-details->spec :mysql details)
@@ -496,8 +494,8 @@
   (testing "Make sure sync a table with json columns that have composite pks works"
     (mt/test-driver :mysql
       (when-not (mysql/mariadb? (mt/db))
-        (drop-if-exists-and-create-db! "composite_pks_test")
-        (with-redefs [metadata-queries/nested-field-sample-limit 4]
+        (tx/drop-if-exists-and-create-db! driver/*driver* "composite_pks_test")
+        (with-redefs [table-rows-sample/nested-field-sample-limit 4]
           (let [details (mt/dbdef->connection-details driver/*driver* :db {:database-name "composite_pks_test"})
                 spec    (sql-jdbc.conn/connection-details->spec driver/*driver* details)]
             (doseq [statement (concat ["CREATE TABLE `json_table` (`first_id` INT, `second_id` INT, `json_val` JSON, PRIMARY KEY(`first_id`, `second_id`));"]
@@ -539,14 +537,14 @@
                                   :aggregation  [[:count]]
                                   :breakout     [[:field (u/the-id field) nil]]}))]
               (is (= ["SELECT"
-                      "  CONVERT(JSON_EXTRACT(`json`.`json_bit`, ?), DECIMAL) AS `json_bit → 1234`,"
+                      "  (JSON_EXTRACT(`json`.`json_bit`, ?) + 0.0) AS `json_bit → 1234`,"
                       "  COUNT(*) AS `count`"
                       "FROM"
                       "  `json`"
                       "GROUP BY"
-                      "  CONVERT(JSON_EXTRACT(`json`.`json_bit`, ?), DECIMAL)"
+                      "  (JSON_EXTRACT(`json`.`json_bit`, ?) + 0.0)"
                       "ORDER BY"
-                      "  CONVERT(JSON_EXTRACT(`json`.`json_bit`, ?), DECIMAL) ASC"]
+                      "  (JSON_EXTRACT(`json`.`json_bit`, ?) + 0.0) ASC"]
                      (str/split-lines (driver/prettify-native-form :mysql (:query compile-res)))))
               (is (= '("$.\"1234\"" "$.\"1234\"" "$.\"1234\"") (:params compile-res))))))))))
 
@@ -566,7 +564,7 @@
                                                               :min-value 0.75,
                                                               :max-value 54.0,
                                                               :bin-width 0.75}}]]
-                  (is (= ["((FLOOR(((CONVERT(JSON_EXTRACT(`json`.`json_bit`, ?), DECIMAL) - 0.75) / 0.75)) * 0.75) + 0.75)"
+                  (is (= ["((FLOOR((((JSON_EXTRACT(`json`.`json_bit`, ?) + 0.0) - 0.75) / 0.75)) * 0.75) + 0.75)"
                           "$.\"1234\""]
                          (sql.qp/format-honeysql :mysql (sql.qp/->honeysql :mysql field-clause)))))))))))))
 
@@ -591,68 +589,96 @@
 
 ;;; ------------------------------------------------ Actions related ------------------------------------------------
 
-;; API tests are in [[metabase.actions.api-test]]
+;; API tests are in [[metabase.actions-rest.api-test]]
 (deftest ^:parallel actions-maybe-parse-sql-error-test
   (testing "violate not null constraint"
-    (is (= {:type :metabase.actions.error/violate-not-null-constraint
-            :message "F1 must have values."
-            :errors {"f1" "You must provide a value."}}
-           (sql-jdbc.actions/maybe-parse-sql-error
-            :mysql actions.error/violate-not-null-constraint nil nil
-            "Column 'f1' cannot be null")))))
+    (is (=? {:type :metabase.actions.error/violate-not-null-constraint
+             :message "F1 must have values."
+             :errors {"f1" "You must provide a value."}}
+            (sql-jdbc.actions/maybe-parse-sql-error
+             :mysql actions.error/violate-not-null-constraint nil nil
+             "Column 'f1' cannot be null")))))
 
 (deftest actions-maybe-parse-sql-error-test-2
   (testing "violate unique constraint"
     (with-redefs [mysql.actions/constraint->column-names (constantly ["PRIMARY"])]
-      (is (= {:type :metabase.actions.error/violate-unique-constraint,
-              :message "Primary already exists.",
-              :errors {"PRIMARY" "This Primary value already exists."}}
-             (sql-jdbc.actions/maybe-parse-sql-error
-              :mysql actions.error/violate-unique-constraint nil nil
-              "(conn=10) Duplicate entry 'ID' for key 'string_pk.PRIMARY'"))))))
+      (is (=? {:type :metabase.actions.error/violate-unique-constraint,
+               :message "Primary already exists.",
+               :errors {"PRIMARY" "This Primary value already exists."}}
+              (sql-jdbc.actions/maybe-parse-sql-error
+               :mysql actions.error/violate-unique-constraint nil nil
+               "(conn=10) Duplicate entry 'ID' for key 'string_pk.PRIMARY'"))))))
 
 (deftest ^:parallel actions-maybe-parse-sql-error-test-3
   (testing "incorrect type"
-    (is (= {:type :metabase.actions.error/incorrect-value-type,
-            :message "Some of your values aren’t of the correct type for the database."
-            :errors {"id" "This value should be of type Integer."}}
-           (sql-jdbc.actions/maybe-parse-sql-error
-            :mysql actions.error/incorrect-value-type nil nil
-            "(conn=183) Incorrect integer value: 'STRING' for column `table`.`id` at row 1")))))
+    (is (=? {:type :metabase.actions.error/incorrect-value-type,
+             :message "Some of your values aren’t of the correct type for the database."
+             :errors {"id" "This value should be of type Integer."}}
+            (sql-jdbc.actions/maybe-parse-sql-error
+             :mysql actions.error/incorrect-value-type nil nil
+             "(conn=183) Incorrect integer value: 'STRING' for column `table`.`id` at row 1")))))
 
 (deftest ^:parallel actions-maybe-parse-sql-error-test-4
   (testing "violate fk constraints"
-    (is (= {:type :metabase.actions.error/violate-foreign-key-constraint
-            :message "Unable to create a new record."
-            :errors {"group-id" "This Group-id does not exist."}}
-           (sql-jdbc.actions/maybe-parse-sql-error
-            :mysql actions.error/violate-foreign-key-constraint nil :row/create
-            "(conn=45) Cannot add or update a child row: a foreign key constraint fails (`action-error-handling`.`user`, CONSTRAINT `user_group-id_group_-159406530` FOREIGN KEY (`group-id`) REFERENCES `group` (`id`))")))))
+    (is (=? {:type :metabase.actions.error/violate-foreign-key-constraint
+             :message "Unable to create a new record."
+             :errors {"group-id" "This value does not exist in table \"group\"."}}
+            (sql-jdbc.actions/maybe-parse-sql-error
+             :mysql actions.error/violate-foreign-key-constraint nil :model.row/create
+             "(conn=45) Cannot add or update a child row: a foreign key constraint fails (`action-error-handling`.`user`, CONSTRAINT `user_group-id_group_-159406530` FOREIGN KEY (`group-id`) REFERENCES `group` (`id`))")))))
 
 (deftest ^:parallel actions-maybe-parse-sql-error-test-5
   (testing "violate fk constraints"
-    (is (= {:type :metabase.actions.error/violate-foreign-key-constraint,
-            :message "Unable to update the record.",
-            :errors {"group" "This Group does not exist."}}
-           (sql-jdbc.actions/maybe-parse-sql-error
-            :mysql actions.error/violate-foreign-key-constraint nil :row/update
-            "(conn=21) Cannot delete or update a parent row: a foreign key constraint fails (`action-error-handling`.`user`, CONSTRAINT `user_group-id_group_-159406530` FOREIGN KEY (`group-id`) REFERENCES `group` (`id`))")))))
+    (is (=? {:type :metabase.actions.error/violate-foreign-key-constraint,
+             :message "Other rows refer to this row so it cannot be changed."
+             :errors {"group" "Referenced in table \"user\"."}}
+            (sql-jdbc.actions/maybe-parse-sql-error
+             :mysql actions.error/violate-foreign-key-constraint nil :model.row/update
+             "(conn=21) Cannot delete or update a parent row: a foreign key constraint fails (`action-error-handling`.`user`, CONSTRAINT `user_group-id_group_-159406530` FOREIGN KEY (`group-id`) REFERENCES `group` (`id`))")))))
 
 (deftest ^:parallel actions-maybe-parse-sql-error-test-6
   (testing "violate fk constraints"
-    (is (= {:type :metabase.actions.error/violate-foreign-key-constraint
-            :message "Other tables rely on this row so it cannot be deleted."
-            :errors {}}
-           (sql-jdbc.actions/maybe-parse-sql-error
-            :mysql actions.error/violate-foreign-key-constraint nil :row/delete
-            "(conn=21) Cannot delete or update a parent row: a foreign key constraint fails (`action-error-handling`.`user`, CONSTRAINT `user_group-id_group_-159406530` FOREIGN KEY (`group-id`) REFERENCES `group` (`id`))")))))
+    (is (=? {:type    :metabase.actions.error/violate-foreign-key-constraint
+             :message "Other rows refer to this row so it cannot be deleted."
+             :errors  {"group" "Referenced in table \"user\"."}}
+            (sql-jdbc.actions/maybe-parse-sql-error
+             :mysql actions.error/violate-foreign-key-constraint nil :model.row/delete
+             "(conn=21) Cannot delete or update a parent row: a foreign key constraint fails (`action-error-handling`.`user`, CONSTRAINT `user_group-id_group_-159406530` FOREIGN KEY (`group-id`) REFERENCES `group` (`id`))")))))
+
+(deftest check-constraint-test
+  (mt/test-driver :mysql
+    (testing "violate check constraints"
+      (tx/drop-if-exists-and-create-db! driver/*driver* "check_constraint_test")
+      (let [details (mt/dbdef->connection-details driver/*driver* :db {:database-name "check_constraint_test"})]
+        (doseq [stmt ["CREATE TABLE test_users (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        email VARCHAR(255) NOT NULL,
+                        age INT,
+                        CONSTRAINT email_format_check CHECK (email REGEXP '^[A-Za-z0-9._%-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')
+                      );"]]
+          (jdbc/execute! (sql-jdbc.conn/connection-details->spec driver/*driver* details) [stmt]))
+        (mt/with-temp [:model/Database database {:engine driver/*driver* :details details}]
+          (mt/with-db database
+            (sync/sync-database! database)
+            (mt/with-actions-enabled
+              (testing "when creating with invalid email"
+                (is (=? {:errors      {}
+                         :message     "Some of your values violate the constraint: email_format_check"
+                         :status-code 400
+                         :type        actions.error/violate-check-constraint}
+                        (sql-jdbc.actions-test/perform-action-ex-data
+                         :model.row/create (mt/$ids {:create-row {"email" "invalid-email"
+                                                                  "age"   25}
+                                                     :database   (:id database)
+                                                     :query      {:source-table $$test_users}
+                                                     :type       :query}))))))))))))
 
 ;; this contains specical test cases for mysql
 ;; for generic tests, check [[metabase.driver.sql-jdbc.actions-test/action-error-handling-test]]
 (deftest action-error-handling-test
   (mt/test-driver :mysql
     (testing "violate not-null constraints with multiple columns"
-      (drop-if-exists-and-create-db! "not_null_constraint_on_multiple_cols")
+      (tx/drop-if-exists-and-create-db! driver/*driver* "not_null_constraint_on_multiple_cols")
       (let [details (mt/dbdef->connection-details driver/*driver* :db {:database-name "not_null_constraint_on_multiple_cols"})]
         (doseq [stmt ["CREATE TABLE IF NOT EXISTS mytable (
                       id INT PRIMARY KEY,
@@ -668,30 +694,30 @@
             (sync/sync-database! database)
             (mt/with-actions-enabled
               (testing "when creating"
-                (is (= {:type        :metabase.actions.error/violate-unique-constraint
-                        :message     "Column1 and Column2 already exist."
-                        :errors      {"column1" "This Column1 value already exists." "column2" "This Column2 value already exists."}
-                        :status-code 400}
-                       (sql-jdbc.actions-test/perform-action-ex-data
-                        :row/create (mt/$ids {:create-row {"id"      3
-                                                           "column1" "A"
-                                                           "column2" "A"}
-                                              :database   (:id database)
-                                              :query      {:source-table $$mytable}
-                                              :type       :query})))))
+                (is (=? {:type        :metabase.actions.error/violate-unique-constraint
+                         :message     "Column1 and Column2 already exist."
+                         :errors      {"column1" "This Column1 value already exists." "column2" "This Column2 value already exists."}
+                         :status-code 400}
+                        (sql-jdbc.actions-test/perform-action-ex-data
+                         :model.row/create (mt/$ids {:create-row {"id"      3
+                                                                  "column1" "A"
+                                                                  "column2" "A"}
+                                                     :database   (:id database)
+                                                     :query      {:source-table $$mytable}
+                                                     :type       :query})))))
               (testing "when updating"
-                (is (= {:errors      {"column1" "This Column1 value already exists."
-                                      "column2" "This Column2 value already exists."}
-                        :message     "Column1 and Column2 already exist."
-                        :status-code 400
-                        :type        actions.error/violate-unique-constraint}
-                       (sql-jdbc.actions-test/perform-action-ex-data
-                        :row/update (mt/$ids {:update-row {"column1" "A"
-                                                           "column2" "A"}
-                                              :database   (:id database)
-                                              :query      {:source-table $$mytable
-                                                           :filter       [:= $mytable.id 2]}
-                                              :type       :query}))))))))))))
+                (is (=? {:errors      {"column1" "This Column1 value already exists."
+                                       "column2" "This Column2 value already exists."}
+                         :message     "Column1 and Column2 already exist."
+                         :status-code 400
+                         :type        actions.error/violate-unique-constraint}
+                        (sql-jdbc.actions-test/perform-action-ex-data
+                         :model.row/update (mt/$ids {:update-row {"column1" "A"
+                                                                  "column2" "A"}
+                                                     :database   (:id database)
+                                                     :query      {:source-table $$mytable
+                                                                  :filter       [:= $mytable.id 2]}
+                                                     :type       :query}))))))))))))
 
 (deftest ^:parallel parse-grant-test
   (testing "`parse-grant` should work correctly"
@@ -748,7 +774,7 @@
   (mt/test-driver :mysql
     (when-not (mysql/mariadb? (mt/db))
       (testing "`table-privileges` should return the correct data for current_user and role privileges"
-        (drop-if-exists-and-create-db! "table_privileges_test")
+        (tx/drop-if-exists-and-create-db! driver/*driver* "table_privileges_test")
         (let [details          (tx/dbdef->connection-details :mysql :db {:database-name "table_privileges_test"})
               spec             (sql-jdbc.conn/connection-details->spec :mysql details)
               get-privileges   (fn []
@@ -795,3 +821,131 @@
                             "DROP ROLE IF EXISTS 'table_privileges_test_role_2';"
                             "DROP ROLE IF EXISTS 'table_privileges_test_role_3';"]]
                 (jdbc/execute! spec stmt)))))))))
+
+(deftest ^:parallel temporal-column-with-binning-keeps-type
+  (mt/test-driver :mysql
+    (let [mp (mt/metadata-provider)]
+      (doseq [[field bins] [[:birth_date [:year :quarter :month :week :day]]
+                            [:created_at [:year :quarter :month :week :day :hour :minute]]]
+              bin bins]
+        (testing (str "field " (name field) " for temporal bucket " (name bin))
+          (let [field-md (lib.metadata/field mp (mt/id :people field))
+                unbinned-query (-> (lib/query mp (lib.metadata/table mp (mt/id :people)))
+                                   (lib/with-fields [field-md])
+                                   (lib/limit 1))
+                binned-query (-> unbinned-query
+                                 (lib/breakout (lib/with-temporal-bucket field-md bin)))]
+            ;; mysql has no way to cast to TIMESTAMP, so if you do anything to it, it becomes a DATETIME
+            (is (= (->> unbinned-query qp/process-query mt/cols (map :database_type)
+                        (map #(get {"TIMESTAMP" "DATETIME"} % %)))
+                   (->> binned-query   qp/process-query mt/cols (map :database_type))))))))))
+
+(deftest have-select-privelege?-timeout-test
+  (mt/test-driver :mysql
+    (let [{schema :schema, table-name :name} (t2/select-one :model/Table (mt/id :checkins))]
+      (qp.store/with-metadata-provider (mt/id)
+        (testing "checking select privilege defaults to allow on timeout (#56737)"
+          (with-redefs [sql-jdbc.describe-database/simple-select-probe-query (constantly ["SELECT sleep(3)"])]
+            (binding [sql-jdbc.describe-database/*select-probe-query-timeout-seconds* 1]
+              (sql-jdbc.execute/do-with-connection-with-options
+               driver/*driver*
+               (mt/db)
+               nil
+               (fn [^java.sql.Connection conn]
+                 (is (true? (sql-jdbc.sync.interface/have-select-privilege?
+                             driver/*driver* conn schema table-name))))))))))))
+
+;; table privileges for mysql currently has bug unfortunately
+(deftest sync-writable-test
+  (mt/test-driver :mysql
+    (when-not (mysql/mariadb? (mt/db))
+      (testing "`sync-tables-and-database!` should set is_writable correctly based on table privileges"
+        (tx/drop-if-exists-and-create-db! driver/*driver* "sync_writable_test")
+        (let [details (tx/dbdef->connection-details :mysql :db {:database-name "sync_writable_test"})
+              spec    (sql-jdbc.conn/connection-details->spec :mysql details)]
+          (try
+            (doseq [stmt ["CREATE TABLE `readonly_table` (id INTEGER);"
+                          "CREATE TABLE `readwrite_table` (id INTEGER);"
+                          "CREATE TABLE `fullaccess_table` (id INTEGER);"
+                          "CREATE USER 'sync_writable_test_user' IDENTIFIED BY 'password';"]]
+              (jdbc/execute! spec stmt))
+
+            (doseq [stmt ["GRANT SELECT ON sync_writable_test.`readonly_table` TO 'sync_writable_test_user'"
+                          "GRANT SELECT, INSERT ON sync_writable_test.`readwrite_table` TO 'sync_writable_test_user'"
+                          "GRANT SELECT, INSERT, UPDATE, DELETE ON sync_writable_test.`fullaccess_table` TO 'sync_writable_test_user'"]]
+              (jdbc/execute! spec stmt))
+
+            (let [user-connection-details (assoc details
+                                                 :user "sync_writable_test_user"
+                                                 :password "password"
+                                                 :ssl true
+                                                 :additional-options "trustServerCertificate=true")]
+              (mt/with-temp [:model/Database database {:engine "mysql", :details user-connection-details}]
+                (sync/sync-database! database)
+                (testing "only fullaccess table has writeable permissions"
+                  (is (= {"readonly_table"   false
+                          "readwrite_table"  false
+                          "fullaccess_table" true}
+                         (t2/select-fn->fn :name :is_writable :model/Table :db_id (:id database)))))
+                (testing "After granting full access to all tables and re-syncing"
+                  (doseq [table-name ["readonly_table" "readwrite_table"]]
+                    (jdbc/execute! spec (format "GRANT INSERT, UPDATE, DELETE ON sync_writable_test.`%s` TO 'sync_writable_test_user'" table-name)))
+
+                  (sync/sync-database! database)
+                  (is (= {"readonly_table"   true
+                          "readwrite_table"  true
+                          "fullaccess_table" true}
+                         (t2/select-fn->fn :name :is_writable :model/Table :db_id (:id database)))))))
+            (finally
+              (jdbc/execute! spec "DROP USER IF EXISTS 'sync_writable_test_user';"))))))))
+
+(deftest partial-revokes-writable-test
+  (mt/test-driver :mysql
+    (when-not (mysql/mariadb? (mt/db))
+      (testing "`database-supports :metadata/table-writable-check` returns true normally but false with partial revokes"
+        (tx/drop-if-exists-and-create-db! driver/*driver* "partial_revokes_test")
+        (let [details (tx/dbdef->connection-details :mysql :db {:database-name "partial_revokes_test"})
+              spec    (sql-jdbc.conn/connection-details->spec :mysql details)]
+          (try
+            ;; Create test tables and user
+            (doseq [stmt ["CREATE TABLE `test_table` (id INTEGER);"
+                          "CREATE USER 'partial_revokes_test_user' IDENTIFIED BY 'password';"
+                          "GRANT SELECT, INSERT, UPDATE, DELETE ON partial_revokes_test.test_table TO 'partial_revokes_test_user'"]]
+              (jdbc/execute! spec stmt))
+
+            (let [user-connection-details (assoc details
+                                                 :user "partial_revokes_test_user"
+                                                 :password "password"
+                                                 :ssl true
+                                                 :additional-options "trustServerCertificate=true")]
+              (mt/with-temp [:model/Database database {:engine "mysql", :details user-connection-details}]
+                (testing "With partial_revokes OFF (default), metadata/table-writable-check is supported"
+                  (jdbc/execute! spec "SET GLOBAL partial_revokes = OFF;")
+                  (is (true? (driver/database-supports? driver/*driver* :metadata/table-writable-check database))
+                      "Should support metadata/table-writable-check when partial_revokes is OFF"))
+
+                (testing "With partial_revokes ON, metadata/table-writable-check is not supported"
+                  (jdbc/execute! spec "SET GLOBAL partial_revokes = ON;")
+                  (is (false? (driver/database-supports? driver/*driver* :metadata/table-writable-check database))
+                      "Should not support metadata/table-writable-check when partial_revokes is ON")
+
+                  (sync/sync-database! database)
+                  (is (= {"test_table" nil}
+                         (t2/select-fn->fn :name :is_writable :model/Table :db_id (:id database)))
+                      "is_writable should sync to nil when partial_revokes is ON"))
+
+                (testing "Revoke some permissions with partial_revokes ON"
+                  (jdbc/execute! spec "REVOKE INSERT ON partial_revokes_test.test_table FROM 'partial_revokes_test_user';")
+                  (is (false? (driver/database-supports? driver/*driver* :metadata/table-writable-check database))
+                      "Should still not support metadata/table-writable-check after partial revoke")
+
+                  ;; Sync database again and verify is_writable is still nil
+                  (sync/sync-database! database)
+                  (is (= {"test_table" nil}
+                         (t2/select-fn->fn :name :is_writable :model/Table :db_id (:id database)))
+                      "is_writable should still be nil after partial revoke"))))
+
+            (finally
+              ;; Clean up: Reset partial_revokes to OFF before exiting
+              (jdbc/execute! spec "SET GLOBAL partial_revokes = OFF;")
+              (jdbc/execute! spec "DROP USER IF EXISTS 'partial_revokes_test_user';"))))))))

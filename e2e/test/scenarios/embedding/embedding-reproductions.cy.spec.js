@@ -1,11 +1,11 @@
 const { H } = cy;
 import { SAMPLE_DATABASE } from "e2e/support/cypress_sample_database";
 import { ORDERS_DASHBOARD_ID } from "e2e/support/cypress_sample_instance_data";
+import { questionAsPinMapWithTiles } from "e2e/test/scenarios/embedding/shared/embedding-questions";
 import { defer } from "metabase/lib/promise";
-
 const { PRODUCTS, PRODUCTS_ID, ORDERS, ORDERS_ID } = SAMPLE_DATABASE;
 
-describe.skip("issue 15860", () => {
+describe("issue 15860", { tags: "@skip" }, () => {
   const q1IdFilter = {
     name: "Q1 ID",
     slug: "q1_id",
@@ -263,7 +263,7 @@ describe("issue 20438", () => {
     cy.button("Add filter").click();
     cy.wait("@getEmbed");
 
-    cy.findAllByTestId("cell-data")
+    cy.findAllByRole("gridcell")
       // One of product titles for Doohickey
       .should("contain", "Small Marble Shoes")
       // One of product titles for Gizmo
@@ -359,7 +359,7 @@ describe("issues 20845, 25031", () => {
     };
   }
   const defaultFilterValues = [undefined, "10"];
-  defaultFilterValues.forEach(value => {
+  defaultFilterValues.forEach((value) => {
     const conditionalPartOfTestTitle = value
       ? "and the required filter with the default value"
       : "";
@@ -417,7 +417,7 @@ describe("issues 20845, 25031", () => {
     });
 
     it(`QUESTION: locked parameter should work with numeric values ${conditionalPartOfTestTitle} (metabase#20845)`, () => {
-      cy.get("@questionId").then(questionId => {
+      cy.get("@questionId").then((questionId) => {
         cy.request("PUT", `/api/card/${questionId}`, {
           enable_embedding: true,
           embedding_params: {
@@ -427,7 +427,7 @@ describe("issues 20845, 25031", () => {
 
         // This issue is not possible to reproduce using UI from this point on.
         // We have to manually send the payload in order to make sure it works for both strings and integers.
-        ["string", "integer"].forEach(type => {
+        ["string", "integer"].forEach((type) => {
           cy.log(
             `Make sure it works with ${type.toUpperCase()} in the payload`,
           );
@@ -440,13 +440,13 @@ describe("issues 20845, 25031", () => {
           });
         });
 
-        cy.findByTestId("column-header").should("contain", "COUNT(*)");
-        cy.findByTestId("cell-data").should("contain", "5");
+        H.tableInteractiveHeader("COUNT(*)");
+        cy.findByRole("gridcell").should("contain", "5");
       });
     });
 
     it(`DASHBOARD: locked parameter should work with numeric values ${conditionalPartOfTestTitle} (metabase#25031)`, () => {
-      cy.get("@dashboardId").then(dashboardId => {
+      cy.get("@dashboardId").then((dashboardId) => {
         H.visitDashboard(dashboardId);
         cy.request("PUT", `/api/dashboard/${dashboardId}`, {
           enable_embedding: true,
@@ -457,7 +457,7 @@ describe("issues 20845, 25031", () => {
 
         // This issue is not possible to reproduce using UI from this point on.
         // We have to manually send the payload in order to make sure it works for both strings and integers.
-        ["string", "integer"].forEach(type => {
+        ["string", "integer"].forEach((type) => {
           cy.log(
             `Make sure it works with ${type.toUpperCase()} in the payload`,
           );
@@ -489,7 +489,7 @@ describe("issues 20845, 25031", () => {
 describe("issue 27643", { tags: "@external" }, () => {
   const PG_DB_ID = 2;
   const TEMPLATE_TAG_NAME = "expected_invoice";
-  const getQuestionDetails = fieldId => {
+  const getQuestionDetails = (fieldId) => {
     return {
       name: "27643",
       database: PG_DB_ID,
@@ -544,7 +544,7 @@ describe("issue 27643", { tags: "@external" }, () => {
       };
 
       cy.get("@postgresInvoicesExpectedInvoiceId")
-        .then(fieldId => {
+        .then((fieldId) => {
           H.createNativeQuestionAndDashboard({
             questionDetails: getQuestionDetails(fieldId),
             dashboardDetails,
@@ -578,7 +578,7 @@ describe("issue 27643", { tags: "@external" }, () => {
       H.getDashboardCard().should("contain", "false");
 
       cy.log("Test the embedded dashboard");
-      cy.get("@dashboardId").then(dashboard => {
+      cy.get("@dashboardId").then((dashboard) => {
         H.visitEmbeddedPage({
           resource: { dashboard },
           params: {},
@@ -590,7 +590,7 @@ describe("issue 27643", { tags: "@external" }, () => {
       });
 
       cy.log("Test the public dashboard");
-      cy.get("@dashboardId").then(dashboardId => {
+      cy.get("@dashboardId").then((dashboardId) => {
         // We were signed out due to the previous visitEmbeddedPage
         cy.signInAsAdmin();
         H.visitPublicDashboard(dashboardId);
@@ -604,7 +604,7 @@ describe("issue 27643", { tags: "@external" }, () => {
 
   describe("should allow a native question filter to map to a boolean field filter parameter (metabase#27643)", () => {
     beforeEach(() => {
-      cy.get("@postgresInvoicesExpectedInvoiceId").then(fieldId => {
+      cy.get("@postgresInvoicesExpectedInvoiceId").then((fieldId) => {
         H.createNativeQuestion(getQuestionDetails(fieldId), {
           wrapId: true,
           idAlias: "questionId",
@@ -615,32 +615,32 @@ describe("issue 27643", { tags: "@external" }, () => {
     it("in static embedding and in public question scenarios (metabase#27643-2)", () => {
       cy.log("Test the question");
       H.visitQuestion("@questionId");
-      cy.findAllByTestId("cell-data").should("contain", "true");
+      cy.findAllByRole("gridcell").should("contain", "true");
       H.toggleFilterWidgetValues(["false"]);
       H.queryBuilderMain().button("Get Answer").click();
-      cy.findAllByTestId("cell-data").should("contain", "false");
+      cy.findAllByRole("gridcell").should("contain", "false");
 
       cy.log("Test the embedded question");
-      cy.get("@questionId").then(question => {
+      cy.get("@questionId").then((question) => {
         H.visitEmbeddedPage({
           resource: { question },
           params: {},
         });
 
-        cy.findAllByTestId("cell-data").should("contain", "true");
+        cy.findAllByRole("gridcell").should("contain", "true");
         H.toggleFilterWidgetValues(["false"]);
-        cy.findAllByTestId("cell-data").should("contain", "false");
+        cy.findAllByRole("gridcell").should("contain", "false");
       });
 
       cy.log("Test the public question");
-      cy.get("@questionId").then(questionId => {
+      cy.get("@questionId").then((questionId) => {
         // We were signed out due to the previous visitEmbeddedPage
         cy.signInAsAdmin();
         H.visitPublicQuestion(questionId);
 
-        cy.findAllByTestId("cell-data").should("contain", "true");
+        cy.findAllByRole("gridcell").should("contain", "true");
         H.toggleFilterWidgetValues(["false"]);
-        cy.findAllByTestId("cell-data").should("contain", "false");
+        cy.findAllByRole("gridcell").should("contain", "false");
       });
     });
   });
@@ -658,7 +658,7 @@ describe("issue 30535", () => {
   beforeEach(() => {
     H.restore();
     cy.signInAsAdmin();
-    H.setTokenFeatures("all");
+    H.activateToken("pro-self-hosted");
 
     cy.sandboxTable({
       table_id: PRODUCTS_ID,
@@ -681,7 +681,7 @@ describe("issue 30535", () => {
       acceptTerms: false,
     });
 
-    cy.document().then(doc => {
+    cy.document().then((doc) => {
       const iframe = doc.querySelector("iframe");
 
       cy.signOut();
@@ -690,7 +690,7 @@ describe("issue 30535", () => {
       cy.visit(iframe.src);
     });
 
-    cy.findByRole("table").within(() => {
+    cy.findByRole("grid").within(() => {
       // The sandboxed user has an attribute cat="Widget"
       cy.findAllByText("Widget");
       // Sandboxing shouldn't affect results so we should see other product categories as well
@@ -907,6 +907,11 @@ describe("dashboard preview", () => {
       cy.button("Add filter").click();
     });
 
+    // Wait for the iframe to load
+    H.getIframeBody().within(() => {
+      cy.button(filter.name).should("not.exist");
+    });
+
     H.getIframeBody().within(() => {
       cy.log("Assert filter 1");
       cy.button(filter.name).click();
@@ -959,17 +964,20 @@ describe("issue 40660", () => {
     });
 
     H.getIframeBody().within(() => {
+      cy.findByText(dashboardDetails.name).should("be.visible");
+      cy.findByTestId("loading-indicator").should("not.exist");
+      cy.findAllByText("1018947080336").should("have.length", 3);
       cy.findByTestId("embed-frame").scrollTo("bottom");
 
-      cy.findByRole("link", { name: "Powered by Metabase" }).should(
-        "be.visible",
-      );
+      cy.findByRole("link", { name: "Powered by Metabase" })
+        .scrollIntoView()
+        .should("be.visible");
     });
   });
 });
 
 // Skipped since it does not make sense when CSP is disabled
-describe.skip("issue 49142", () => {
+describe("issue 49142", { tags: "@skip" }, () => {
   const questionDetails = {
     name: "Products",
     query: { "source-table": PRODUCTS_ID, limit: 2 },
@@ -1008,7 +1016,7 @@ describe("issue 8490", () => {
   beforeEach(() => {
     H.restore();
     cy.signInAsAdmin();
-    H.setTokenFeatures("all");
+    H.activateToken("pro-self-hosted");
 
     H.createDashboardWithQuestions({
       dashboardDetails: {
@@ -1030,10 +1038,10 @@ describe("issue 8490", () => {
               ],
             ],
             filter: [
-              "time-interval",
+              "between",
               ["field", PRODUCTS.CREATED_AT, { "base-type": "type/DateTime" }],
-              -12,
-              "month",
+              "2024-01-01",
+              "2025-01-01",
             ],
           },
           limit: 100,
@@ -1119,8 +1127,8 @@ describe("issue 8490", () => {
         url: "/api/embed/dashboard/*",
         middleware: true,
       },
-      req => {
-        req.on("response", res => {
+      (req) => {
+        req.on("response", (res) => {
           const MINUTE = 60 * 1000;
           res.setDelay(MINUTE);
         });
@@ -1132,8 +1140,8 @@ describe("issue 8490", () => {
         url: "/api/embed/card/*",
         middleware: true,
       },
-      req => {
-        req.on("response", res => {
+      (req) => {
+        req.on("response", (res) => {
           const MINUTE = 60 * 1000;
           res.setDelay(MINUTE);
         });
@@ -1141,7 +1149,7 @@ describe("issue 8490", () => {
     ).as("questionRequest");
 
     cy.log("test a static embedded dashboard");
-    cy.get("@dashboardId").then(dashboardId => {
+    cy.get("@dashboardId").then((dashboardId) => {
       H.visitEmbeddedPage(
         {
           resource: { dashboard: dashboardId },
@@ -1156,10 +1164,12 @@ describe("issue 8490", () => {
     });
 
     // Loading...
-    cy.findByTestId("embed-frame").findByText("로딩...").should("be.visible");
+    cy.findByTestId("embed-frame")
+      .findByText("로드 중...")
+      .should("be.visible");
 
     cy.log("test a static embedded question");
-    cy.get("@lineChartQuestionId").then(lineChartQuestionId => {
+    cy.get("@lineChartQuestionId").then((lineChartQuestionId) => {
       H.visitEmbeddedPage(
         {
           resource: { question: lineChartQuestionId },
@@ -1191,7 +1201,7 @@ describe("issue 8490", () => {
       () => dashboardLoaderPromise,
     ).as("dashboardRequest");
 
-    cy.get("@dashboardId").then(dashboardId => {
+    cy.get("@dashboardId").then((dashboardId) => {
       H.visitEmbeddedPage(
         {
           resource: { dashboard: dashboardId },
@@ -1210,17 +1220,14 @@ describe("issue 8490", () => {
         "static embeddings with `#locale` should show a translated the loading message",
       );
       // Loading...
-      cy.findByText("로딩...")
+      cy.findByText("로드 중...")
         .should("be.visible")
         .then(resolveDashboardLoaderPromise);
-
-      // PDF export
-      cy.findByText("PDF로 내보내기").should("be.visible");
 
       cy.log("assert the line chart");
       H.getDashboardCard(0).within(() => {
         // X-axis labels: Jan 2024 (or some other year)
-        cy.findByText(/1월 20\d\d\b/).should("be.visible");
+        cy.findByText(/^1월 20\d\d\b/).should("be.visible");
         // Aggregation "count"
         cy.findByText("카운트").should("be.visible");
       });
@@ -1258,7 +1265,7 @@ describe("issue 8490", () => {
     ).as("questionRequest");
 
     cy.log("assert the line chart");
-    cy.get("@lineChartQuestionId").then(lineChartQuestionId => {
+    cy.get("@lineChartQuestionId").then((lineChartQuestionId) => {
       H.visitEmbeddedPage(
         {
           resource: { question: lineChartQuestionId },
@@ -1296,14 +1303,14 @@ describe("issue 50373", () => {
         method: "GET",
         url: /^\/app\/dist\/(.*)\.js$/,
       },
-      req => {
+      (req) => {
         // When running in development (e.g. with `yarn dev`),
         // the *.hot.bundle.js hot-reloaded file is served by the dev server.
         if (req.url.includes("hot.bundle.js")) {
           return;
         }
 
-        req.on("response", res => {
+        req.on("response", (res) => {
           expect(
             res.headers["cache-control"],
             `Invalid Cache-Control header for ${req.url}`,
@@ -1313,5 +1320,201 @@ describe("issue 50373", () => {
     );
 
     H.visitEmbeddedPage({ resource: { dashboard: ORDERS_DASHBOARD_ID } });
+  });
+});
+
+describe("issue 51934 (EMB-189)", () => {
+  const COLLECTION_NAME = "Model Collection";
+  const MODEL_IN_ROOT_NAME = "Products Model";
+  const MODEL_IN_COLLECTION_NAME = "QA Postgres12 Orders Model";
+  const QUESTION_IN_COLLECTION_NAME = "Orders Question";
+
+  beforeEach(() => {
+    H.restore("postgres-12");
+    cy.signInAsAdmin();
+    H.activateToken("pro-self-hosted");
+    H.createModelFromTableName({
+      tableName: "products",
+      modelName: MODEL_IN_ROOT_NAME,
+    });
+    H.createCollection({
+      name: COLLECTION_NAME,
+      alias: "collectionId",
+    });
+    H.createModelFromTableName({
+      tableName: "orders",
+      modelName: MODEL_IN_COLLECTION_NAME,
+      idAlias: "modelId",
+    });
+    moveToCollection({
+      collectionIdAlias: "collectionId",
+      cardIdAlias: "modelId",
+    });
+    H.createQuestion(
+      {
+        name: QUESTION_IN_COLLECTION_NAME,
+        query: {
+          "source-table": ORDERS_ID,
+        },
+      },
+      {
+        wrapId: true,
+        idAlias: "questionId",
+      },
+    );
+    moveToCollection({
+      collectionIdAlias: "collectionId",
+      cardIdAlias: "questionId",
+    });
+  });
+
+  it("should set the starting join step based on the query source", () => {
+    startNewEmbeddingQuestion();
+    const QA_DB_NAME = "QA Postgres12";
+    const DATA_SOURCE_NAME = "Orders";
+
+    cy.log("select a table as a data source");
+    H.popover().within(() => {
+      cy.findByText("Raw Data").click();
+      cy.findByRole("heading", { name: QA_DB_NAME }).click();
+      cy.findByRole("option", { name: DATA_SOURCE_NAME }).click();
+    });
+    H.getNotebookStep("data").button("Join data").click();
+
+    cy.log(
+      'select the "Join" step when the data source is a table will open a table in the same database',
+    );
+    H.popover().within(() => {
+      cy.findByText(QA_DB_NAME).should("be.visible");
+      cy.findByRole("option", { name: "Orders" }).should("be.visible");
+    });
+
+    cy.log(
+      "changing the data source while not selecting the join step should refresh the data picker on the join step",
+    );
+    H.getNotebookStep("data").findByText(DATA_SOURCE_NAME).click();
+
+    cy.log('go back to the "Bucket" step');
+    H.popover().within(() => {
+      cy.icon("chevronleft").click();
+      cy.icon("chevronleft").click();
+    });
+
+    cy.log(
+      "select a question as a data source should open the saved question step in the same collection as the data source (metabase#58357)",
+    );
+    H.popover().within(() => {
+      cy.findByText("Saved Questions").click();
+      cy.findByRole("menuitem", { name: COLLECTION_NAME }).click();
+      cy.findByRole("menuitem", { name: QUESTION_IN_COLLECTION_NAME }).click();
+    });
+
+    cy.log("the join popover is automatically opened");
+    H.popover().within(() => {
+      cy.log("the collection of the data source should be selected");
+      cy.findByRole("menuitem", { name: COLLECTION_NAME }).should(
+        "have.css",
+        "background-color",
+        // brand color
+        "rgb(80, 158, 226)",
+      );
+      cy.findByRole("menuitem", { name: QUESTION_IN_COLLECTION_NAME })
+        .should("be.visible")
+        .click();
+    });
+
+    cy.log(
+      "select a model as a data source should open the model step in the same collection as the data source",
+    );
+    H.getNotebookStep("data").findByText(QUESTION_IN_COLLECTION_NAME).click();
+
+    H.popover().within(() => {
+      // Go back to the "Bucket" step
+      cy.findByText("Saved Questions").click();
+
+      // We're now at the "Bucket" step
+      cy.findByText("Models").click();
+      cy.findByRole("menuitem", { name: COLLECTION_NAME }).click();
+      cy.findByRole("menuitem", { name: MODEL_IN_COLLECTION_NAME }).click();
+    });
+
+    cy.log("the join popover is automatically opened");
+    H.popover().within(() => {
+      cy.log("the collection of the data source should be selected");
+      cy.findByRole("menuitem", { name: COLLECTION_NAME }).should(
+        "have.css",
+        "background-color",
+        // brand color
+        "rgb(80, 158, 226)",
+      );
+      cy.findByRole("menuitem", { name: MODEL_IN_COLLECTION_NAME })
+        .should("be.visible")
+        .click();
+    });
+
+    cy.log(
+      "select a data source after selecting a join step should refresh the data picker on the join step",
+    );
+    H.getNotebookStep("data").findByText(MODEL_IN_COLLECTION_NAME).click();
+    H.popover().within(() => {
+      cy.findByRole("menuitem", { name: "Our analytics" }).click();
+      cy.findByRole("menuitem", { name: MODEL_IN_ROOT_NAME }).click();
+    });
+
+    H.popover().within(() => {
+      cy.log("the collection of the new data source should be selected");
+      cy.findByRole("menuitem", { name: "Our analytics" }).should(
+        "have.css",
+        "background-color",
+        // brand color
+        "rgb(80, 158, 226)",
+      );
+      cy.findByRole("menuitem", { name: MODEL_IN_ROOT_NAME }).should(
+        "be.visible",
+      );
+    });
+  });
+
+  function startNewEmbeddingQuestion() {
+    H.visitFullAppEmbeddingUrl({
+      url: "/question/notebook",
+      qs: {
+        data_picker: "staged",
+        entity_types: "table,model,question",
+      },
+    });
+  }
+
+  function moveToCollection({ collectionIdAlias, cardIdAlias }) {
+    cy.get(`@${collectionIdAlias}`).then((collectionId) => {
+      cy.get(`@${cardIdAlias}`).then((cardId) => {
+        cy.request("PUT", `/api/card/${cardId}`, {
+          collection_id: collectionId,
+        });
+      });
+    });
+  }
+});
+
+describe("issue 63687", () => {
+  beforeEach(() => {
+    H.restore();
+    cy.signInAsAdmin();
+  });
+
+  it("should properly display pin map tiles without auth errors for a valid JWT token", () => {
+    H.createNativeQuestion(questionAsPinMapWithTiles, {
+      visitQuestion: true,
+    });
+
+    H.openStaticEmbeddingModal({ activeTab: "parameters" });
+
+    cy.intercept("/api/embed/tiles/**").as("getTiles");
+
+    H.visitIframe();
+
+    cy.wait("@getTiles").then(({ response: tileResponse }) => {
+      expect(tileResponse?.statusCode).to.equal(200);
+    });
   });
 });

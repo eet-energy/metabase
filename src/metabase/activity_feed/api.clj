@@ -5,7 +5,7 @@
    [metabase.activity-feed.models.recent-views :as recent-views]
    [metabase.api.common :as api :refer [*current-user-id*]]
    [metabase.api.macros :as api.macros]
-   [metabase.db.query :as mdb.query]
+   [metabase.app-db.core :as app-db]
    [metabase.models.interface :as mi]
    [metabase.util.honey-sql-2 :as h2x]
    [metabase.util.malli :as mu]
@@ -18,7 +18,7 @@
    (case model
      "card"      [:model/Card
                   :id :name :collection_id :description :display
-                  :dataset_query :type :archived
+                  :dataset_query :type :archived :card_schema
                   :collection.authority_level [:collection.name :collection_name]
                   [:dashboard.name :dashboard_name] :dashboard_id]
      "dashboard" [:model/Dashboard
@@ -31,7 +31,7 @@
                   [:visibility_type :visibility_type]
                   [:metabase_database.name :database-name]])
    (let [model-symb (symbol (str/capitalize model))
-         self-qualify #(mdb.query/qualify model-symb %)]
+         self-qualify #(app-db/qualify model-symb %)]
      {:where [:in (self-qualify :id) ids]
       :left-join (case model
                    "table" [:metabase_database [:= :metabase_database.id (self-qualify :db_id)]]
@@ -78,7 +78,9 @@
                                              {:group-by  [:model :model_id]
                                               :where     [:and
                                                           [:= :context "view"]
-                                                          [:in :model #{"dashboard" "table"}]]
+                                                          [:in :model #{"dashboard" "table"}]
+                                                          [:or [:= :active true] [:= :active nil]]
+                                                          [:or [:= :archived false] [:= :archived nil]]]
                                               :order-by  [[:max_ts :desc] [:model :desc]]
                                               :limit     views-limit
                                               :left-join [[:report_dashboard :d]
@@ -91,10 +93,10 @@
                                                            [:= :t.id :model_id]]]})
         card-runs                 (->> (t2/select [:model/QueryExecution
                                                    [:%min.executor_id :user_id]
-                                                   [(mdb.query/qualify :model/QueryExecution :card_id) :model_id]
+                                                   [(app-db/qualify :model/QueryExecution :card_id) :model_id]
                                                    [:%count.* :cnt]
                                                    [:%max.started_at :max_ts]]
-                                                  {:group-by [(mdb.query/qualify :model/QueryExecution :card_id) :context]
+                                                  {:group-by [(app-db/qualify :model/QueryExecution :card_id) :context]
                                                    :where    [:and
                                                               [:= :context (h2x/literal :question)]]
                                                    :order-by [[:max_ts :desc]]
@@ -108,6 +110,8 @@
 (def ^:private views-limit 8)
 (def ^:private card-runs-limit 8)
 
+;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
 (api.macros/defendpoint :get "/recent_views"
   "Get a list of 100 models (cards, models, tables, dashboards, and collections) that the current user has been viewing most
   recently. Return a maximum of 20 model of each, if they've looked at at least 20."
@@ -115,14 +119,18 @@
   []
   {:recent_views (:recents (recent-views/get-recents *current-user-id* [:views]))})
 
+;; TODO (Cam 10/28/25) -- fix this endpoint so it uses kebab-case for query parameters for consistency with the rest
+;; of the REST API
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-query-params-use-kebab-case]}
 (api.macros/defendpoint :get "/recents"
   "Get a list of recent items the current user has been viewing most recently under the `:recents` key.
   Allows for filtering by context: views or selections"
   [_route-params
-   {:keys [context]} :- [:map
-                         [:context (ms/QueryVectorOf [:enum :selections :views])]]]
+   {:keys [context include_metadata]} :- [:map
+                                          [:context (ms/QueryVectorOf [:enum :selections :views])]
+                                          [:include_metadata {:default false} [:maybe :boolean]]]]
   (when-not (seq context) (throw (ex-info "context is required." {})))
-  (recent-views/get-recents *current-user-id* context))
+  (recent-views/get-recents *current-user-id* context {:include-metadata? include_metadata}))
 
 (api.macros/defendpoint :post "/recents"
   "Adds a model to the list of recently selected items."
@@ -139,6 +147,8 @@
     (api/read-check (t2/select-one model-type :id model-id))
     (recent-views/update-users-recent-views! *current-user-id* model-type model-id context)))
 
+;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
 (api.macros/defendpoint :get "/most_recently_viewed_dashboard"
   "Get the most recently viewed dashboard for the current user. Returns a 204 if the user has not viewed any dashboards
    in the last 24 hours."
@@ -235,6 +245,8 @@
                    (assoc :timestamp (:max_ts % ""))
                    recent-views/fill-recent-view-info)))))
 
+;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
 (api.macros/defendpoint :get "/popular_items"
   "Get the list of 5 popular things on the instance. Query takes 8 and limits to 5 so that if it finds anything
   archived, deleted, etc it can usually still get 5. "

@@ -46,7 +46,7 @@ describe("snapshots", () => {
       snapshot("setup");
       addUsersAndGroups();
       createCollections();
-      withSampleDatabase(SAMPLE_DATABASE => {
+      withSampleDatabase((SAMPLE_DATABASE) => {
         ensureTableIdsAreCorrect(SAMPLE_DATABASE);
         hideNewSampleTables(SAMPLE_DATABASE);
         createQuestionsAndDashboards(SAMPLE_DATABASE);
@@ -110,13 +110,12 @@ describe("snapshots", () => {
     updateSetting("enable-embedding-static", true).then(() => {
       updateSetting("embedding-secret-key", METABASE_SECRET_KEY);
     });
-
-    // update the Sample db connection string so it is valid in both CI and locally
-    cy.request("GET", `/api/database/${SAMPLE_DB_ID}`).then(response => {
-      response.body.details.db =
-        "./plugins/sample-database.db;USER=GUEST;PASSWORD=guest";
-      cy.request("PUT", `/api/database/${SAMPLE_DB_ID}`, response.body);
-    });
+    // dismiss the license token missing banner, not necessary to render it in every test
+    updateSetting(
+      "license-token-missing-banner-dismissal-timestamp",
+      new Date().toISOString(),
+    );
+    updateSetting("store-url", "https://test-store.metabase.com");
   }
 
   function addUsersAndGroups() {
@@ -143,14 +142,14 @@ describe("snapshots", () => {
     );
 
     // Create all users except admin, who was already created in one of the previous steps
-    Object.keys(_.omit(USERS, "admin")).forEach(user => {
+    Object.keys(_.omit(USERS, "admin")).forEach((user) => {
       cy.createUser(user);
     });
 
     // Make a call to `/api/user` because some things (personal collections) get created there
     cy.request("GET", "/api/user");
 
-    Object.keys(USERS).forEach(user => {
+    Object.keys(USERS).forEach((user) => {
       if (user === "admin") {
         // we already cached admin user credentials during setup
         return;
@@ -221,17 +220,18 @@ describe("snapshots", () => {
       }).then(({ body }) => callback && callback(body));
     }
 
-    postCollection("First collection", undefined, firstCollection => {
+    postCollection("First collection", undefined, (firstCollection) => {
       logSelectModel(firstCollection.id, "collection");
       postCollection(
         "Second collection",
         firstCollection.id,
-        secondCollection => {
+        (secondCollection) => {
           logSelectModel(secondCollection.id, "collection");
           postCollection(
             "Third collection",
             secondCollection.id,
-            thirdCollection => logSelectModel(thirdCollection.id, "collection"),
+            (thirdCollection) =>
+              logSelectModel(thirdCollection.id, "collection"),
           );
         },
       );
@@ -309,52 +309,12 @@ describe("snapshots", () => {
     FEEDBACK_ID,
     INVOICES_ID,
   }) {
-    [ACCOUNTS_ID, ANALYTIC_EVENTS_ID, FEEDBACK_ID, INVOICES_ID].forEach(id => {
-      cy.request("PUT", `/api/table/${id}`, { visibility_type: "hidden" });
-    });
+    [ACCOUNTS_ID, ANALYTIC_EVENTS_ID, FEEDBACK_ID, INVOICES_ID].forEach(
+      (id) => {
+        cy.request("PUT", `/api/table/${id}`, { visibility_type: "hidden" });
+      },
+    );
   }
-
-  // TODO: It'd be nice to have one file per snapshot.
-  // To do that we need to enforce execution order among them.
-  describe("withSqlite", () => {
-    it("withSqlite", () => {
-      restore("default");
-      cy.signInAsAdmin();
-
-      cy.request("POST", "/api/database", {
-        engine: "sqlite",
-        name: "sqlite",
-        details: { db: "./resources/sqlite-fixture.db" },
-        auto_run_queries: true,
-        is_full_sync: true,
-        schedules: {
-          cache_field_values: {
-            schedule_day: null,
-            schedule_frame: null,
-            schedule_hour: 0,
-            schedule_type: "daily",
-          },
-          metadata_sync: {
-            schedule_day: null,
-            schedule_frame: null,
-            schedule_hour: null,
-            schedule_type: "hourly",
-          },
-        },
-      }).then(({ body: { id } }) => {
-        cy.request("POST", `/api/database/${id}/sync_schema`);
-        cy.request("POST", `/api/database/${id}/rescan_values`);
-        cy.wait(1000); // wait for sync
-        snapshot("withSqlite");
-        // TODO: Temporary HACK that requires further investigation and a better solution.
-        // sqlite driver was messing with the sync of postres database in CY tests
-        // ("probably some weird race condition" @Damon)
-        // Deleting it here keeps snapshots intact, and enables for unobstructed postgres testing.
-        cy.request("DELETE", `/api/database/${id}`);
-        restore("blank");
-      });
-    });
-  });
 });
 
 function getDefaultInstanceData() {
@@ -387,8 +347,8 @@ function getDefaultInstanceData() {
         `/api/collection/${collection.id}/items?models=dashboard`,
       ).then(({ body: { data: dashboards } }) => {
         for (const dashboard of dashboards) {
-          if (!instanceData.dashboards.find(d => d.id === dashboard.id)) {
-            cy.request(`/api/dashboard/${dashboard.id}`).then(response => {
+          if (!instanceData.dashboards.find((d) => d.id === dashboard.id)) {
+            cy.request(`/api/dashboard/${dashboard.id}`).then((response) => {
               instanceData.dashboards.push(response.body);
             });
           }

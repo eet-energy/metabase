@@ -5,17 +5,22 @@ import { t } from "ttag";
 import { DatePicker } from "metabase/querying/filters/components/DatePicker";
 import type {
   DatePickerOperator,
+  DatePickerShortcut,
   DatePickerValue,
+  RelativeIntervalDirection,
 } from "metabase/querying/filters/types";
 import {
   deserializeDateParameterValue,
   serializeDateParameterValue,
 } from "metabase/querying/parameters/utils/parsing";
+import { Button } from "metabase/ui";
 import type { ParameterValueOrArray } from "metabase-types/api";
 
 type DateAllOptionsWidgetProps = {
   value: ParameterValueOrArray | null | undefined;
   availableOperators?: DatePickerOperator[];
+  availableShortcuts?: DatePickerShortcut[];
+  availableDirections?: RelativeIntervalDirection[];
   submitButtonLabel?: string;
   onChange: (value: string) => void;
 };
@@ -23,8 +28,10 @@ type DateAllOptionsWidgetProps = {
 export function DateAllOptionsWidget({
   value,
   availableOperators,
+  availableDirections,
   submitButtonLabel = t`Apply`,
   onChange,
+  availableShortcuts,
 }: DateAllOptionsWidgetProps) {
   const pickerValue = useMemo(() => getPickerValue(value), [value]);
 
@@ -36,7 +43,13 @@ export function DateAllOptionsWidget({
     <DatePicker
       value={pickerValue}
       availableOperators={availableOperators}
-      submitButtonLabel={submitButtonLabel}
+      availableShortcuts={availableShortcuts}
+      availableDirections={availableDirections}
+      renderSubmitButton={({ isDisabled }) => (
+        <Button type="submit" variant="filled" disabled={isDisabled}>
+          {submitButtonLabel}
+        </Button>
+      )}
       onChange={handleChange}
     />
   );
@@ -47,6 +60,9 @@ function getPickerValue(
 ): DatePickerValue | undefined {
   return match(deserializeDateParameterValue(value))
     .returnType<DatePickerValue | undefined>()
-    .with({ type: P.union("specific", "relative", "exclude") }, value => value)
+    .with(
+      { type: P.union("specific", "relative", "exclude") },
+      (value) => value,
+    )
     .otherwise(() => undefined);
 }

@@ -3,9 +3,9 @@
    [clojure.data :refer [diff]]
    [clojure.set :as set]
    [clojure.string :as str]
-   [metabase.models.dashboard :as dashboard]
-   [metabase.models.dashboard-card :as dashboard-card]
-   [metabase.models.dashboard-tab :as dashboard-tab]
+   [metabase.dashboards.models.dashboard :as dashboard]
+   [metabase.dashboards.models.dashboard-card :as dashboard-card]
+   [metabase.dashboards.models.dashboard-tab :as dashboard-tab]
    [metabase.revisions.models.revision :as revision]
    [metabase.util :as u]
    [metabase.util.i18n :refer [deferred-tru deferred-trun]]
@@ -18,6 +18,7 @@
     ;; > The position this Dashboard should appear in the Dashboards list,
     ;;   lower-numbered positions appearing before higher numbered ones.
     ;; TODO: querying on stats we don't have any dashboard that has a position, maybe we could just drop it?
+    :dependency_analysis_version
     :public_uuid :made_public_by_id
     :position :initially_published_at :view_count
     :last_viewed_at})

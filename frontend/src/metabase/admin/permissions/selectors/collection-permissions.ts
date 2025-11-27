@@ -5,6 +5,7 @@ import _ from "underscore";
 
 import {
   isInstanceAnalyticsCollection,
+  isLibraryCollection,
   nonPersonalOrArchivedCollection,
 } from "metabase/collections/utils";
 import Collections, {
@@ -41,6 +42,7 @@ export const collectionsQuery = {
   tree: true,
   "exclude-other-user-collections": true,
   "exclude-archived": true,
+  "include-library": true,
 };
 
 export const getIsDirty = createSelector(
@@ -86,8 +88,17 @@ const getCollections = (state: State) =>
     }) ?? []
   ).filter(nonPersonalOrArchivedCollection);
 
-const getCollectionsTree = createSelector([getCollections], collections => {
-  return [getRootCollectionTreeItem(), ...buildCollectionTree(collections)];
+const getCollectionsTree = createSelector([getCollections], (collections) => {
+  const libraryCollections = collections.filter(isLibraryCollection);
+  const nonLibraryCollections = collections.filter(
+    (collection: Collection) => !isLibraryCollection(collection),
+  );
+
+  return [
+    ...buildCollectionTree(libraryCollections),
+    getRootCollectionTreeItem(),
+    ...buildCollectionTree(nonLibraryCollections),
+  ];
 });
 
 export function buildCollectionTree(
@@ -140,7 +151,7 @@ const findCollection = (
   }
 
   const collection = collections.find(
-    collection => collection.id === collectionId,
+    (collection) => collection.id === collectionId,
   );
 
   if (collection) {
@@ -148,7 +159,7 @@ const findCollection = (
   }
 
   return findCollection(
-    collections.map(collection => collection.children ?? []).flat(),
+    collections.map((collection) => collection.children ?? []).flat(),
     collectionId,
   );
 };
@@ -188,7 +199,7 @@ const getCollectionPermission = (
   permissions: CollectionPermissions,
   groupId: number,
   collectionId: CollectionId,
-) => getIn(permissions, [groupId, collectionId]);
+) => getIn(permissions, [groupId, collectionId]) || "none";
 
 const getNamespace = (_state: State, props: CollectionIdProps) =>
   props.namespace;
@@ -317,7 +328,7 @@ function getPermissionsSet(
   permissions: CollectionPermissions,
   groupId: number,
 ) {
-  const perms = collections.map(collection =>
+  const perms = collections.map((collection) =>
     getCollectionPermission(permissions, groupId, collection.id),
   );
   return new Set(perms);

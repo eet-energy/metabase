@@ -4,22 +4,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { t } from "ttag";
 
 import {
+  type EntityType,
   canonicalCollectionId,
   isTrashedCollection,
   isValidCollectionId,
 } from "metabase/collections/utils";
-import type {
-  CollectionPickerItem,
-  CollectionPickerModalProps,
-  CollectionPickerOptions,
-} from "metabase/common/components/CollectionPicker";
-import { CollectionPickerModal } from "metabase/common/components/CollectionPicker";
+import CollectionName from "metabase/common/components/CollectionName";
 import type { FilterItemsInPersonalCollection } from "metabase/common/components/EntityPicker";
-import CollectionName from "metabase/containers/CollectionName";
-import SnippetCollectionName from "metabase/containers/SnippetCollectionName";
-import FormField from "metabase/core/components/FormField";
+import FormField from "metabase/common/components/FormField";
+import {
+  type CollectionPickerItem,
+  CollectionPickerModal,
+  type CollectionPickerModalProps,
+  type CollectionPickerOptions,
+} from "metabase/common/components/Pickers/CollectionPicker";
+import SnippetCollectionName from "metabase/common/components/SnippetCollectionName";
+import { useUniqueId } from "metabase/common/hooks/use-unique-id";
 import Collections from "metabase/entities/collections";
-import { useUniqueId } from "metabase/hooks/use-unique-id";
 import { useSelector } from "metabase/lib/redux";
 import { Button, Icon } from "metabase/ui";
 import type { CollectionId } from "metabase-types/api";
@@ -32,6 +33,7 @@ interface FormCollectionPickerProps extends HTMLAttributes<HTMLDivElement> {
   initialOpenCollectionId?: CollectionId;
   onOpenCollectionChange?: (collectionId: CollectionId) => void;
   filterPersonalCollections?: FilterItemsInPersonalCollection;
+  entityType?: EntityType;
   collectionPickerModalProps?: Partial<CollectionPickerModalProps>;
 }
 
@@ -57,6 +59,7 @@ function FormCollectionPicker({
   placeholder = t`Select a collection`,
   type = "collections",
   filterPersonalCollections,
+  entityType,
   collectionPickerModalProps,
 }: FormCollectionPickerProps) {
   const id = useUniqueId();
@@ -68,13 +71,13 @@ function FormCollectionPicker({
 
   const [openCollectionId] = useState<CollectionId>("root");
 
-  const openCollection = useSelector(state =>
+  const openCollection = useSelector((state) =>
     Collections.selectors.getObject(state, {
       entityId: openCollectionId,
     }),
   );
 
-  const selectedCollection = useSelector(state =>
+  const selectedCollection = useSelector((state) =>
     Collections.selectors.getObject(state, {
       entityId: value,
     }),
@@ -153,6 +156,7 @@ function FormCollectionPicker({
           onChange={handleChange}
           onClose={() => setIsPickerOpen(false)}
           options={options}
+          entityType={entityType}
           {...collectionPickerModalProps}
         />
       )}

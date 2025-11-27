@@ -10,7 +10,6 @@ import {
   ORDERS_DASHBOARD_ID,
   ORDERS_QUESTION_ID,
 } from "e2e/support/cypress_sample_instance_data";
-import { mapPinIcon } from "e2e/support/helpers";
 import { GRID_WIDTH } from "metabase/lib/dashboard_grid";
 import {
   createMockVirtualCard,
@@ -25,6 +24,12 @@ import {
 } from "../admin/performance/helpers/e2e-strategy-form-helpers";
 
 const { ORDERS, ORDERS_ID, PRODUCTS, PEOPLE, PEOPLE_ID } = SAMPLE_DATABASE;
+
+// There's a race condition when saving a dashboard
+// and then immediately editing it again. After saving,
+// we exit the edit mode and that can happen after
+// `H.editDashboard` is called for some reason
+const DASHBOARD_SAVE_WAIT_TIME = 450;
 
 describe("scenarios > dashboard", () => {
   beforeEach(() => {
@@ -49,10 +54,7 @@ describe("scenarios > dashboard", () => {
         "pressing escape should only close the entity picker modal, not the new dashboard modal",
       );
       H.modal().findByTestId("collection-picker-button").click();
-      H.entityPickerModal().findByText("Select a collection");
-      // cy.realPress("Escape");
-      // TODO: Fix this:
-      H.entityPickerModal().button("Cancel").click();
+      cy.realPress("Escape");
       H.modal().findByText("New dashboard").should("be.visible");
 
       cy.log("Create a new dashboard");
@@ -85,17 +87,14 @@ describe("scenarios > dashboard", () => {
       cy.findByTestId("dashboard-empty-state").button("Add a chart").click();
       cy.findByTestId("new-button-bar").findByText("New Question").click();
 
+      H.miniPickerBrowseAll().click();
       H.entityPickerModal().within(() => {
-        H.entityPickerModalTab("Collections").click();
-        cy.findByPlaceholderText("Search this collection or everywhere…").type(
-          "Pro",
-        );
-        cy.findByText("Everywhere").click();
+        cy.findByPlaceholderText("Search…").type("Pro");
         cy.findByText("Products").click();
       });
 
       H.queryBuilderHeader().findByText("Save").click();
-      cy.findByTestId("save-question-modal").within(modal => {
+      cy.findByTestId("save-question-modal").within((modal) => {
         cy.findByLabelText("Name").clear().type(newQuestionName);
         cy.findByLabelText("Where do you want to save this?").should(
           "not.exist",
@@ -127,11 +126,15 @@ describe("scenarios > dashboard", () => {
       () => {
         cy.intercept("POST", "api/collection").as("createCollection");
         cy.visit("/");
+        cy.findByTestId("home-page").should(
+          "contain",
+          "Try out these sample x-rays to see what Metabase can do.",
+        );
         H.closeNavigationSidebar();
         H.appBar().findByText("New").click();
         H.popover().findByText("Dashboard").should("be.visible").click();
         const NEW_DASHBOARD = "Foo";
-        cy.findByTestId("new-dashboard-modal").then(modal => {
+        cy.findByTestId("new-dashboard-modal").then((modal) => {
           cy.findByRole("heading", { name: "New dashboard" });
           cy.findByLabelText("Name").type(NEW_DASHBOARD).blur();
           cy.findByTestId("collection-picker-button")
@@ -193,10 +196,8 @@ describe("scenarios > dashboard", () => {
       cy.wait("@saveQuestion");
 
       cy.log("Add this new question to a dashboard created on the fly");
-      H.modal().within(() => {
-        cy.findByText("Saved! Add this to a dashboard?");
-        cy.button("Yes please!").click();
-      });
+
+      H.checkSavedToCollectionQuestionToast(true);
 
       H.entityPickerModal()
         .findByRole("tab", { name: /Dashboards/ })
@@ -217,7 +218,7 @@ describe("scenarios > dashboard", () => {
 
       H.commandPaletteButton().click();
       H.commandPalette().within(() => {
-        cy.findByText("Recent items").should("exist");
+        cy.findByText("Recents").should("exist");
         cy.findByRole("option", { name: "Orders in a dashboard" }).click();
       });
 
@@ -411,7 +412,7 @@ describe("scenarios > dashboard", () => {
         H.showDashboardCardActions();
         H.getDashboardCardMenu().click();
         H.popover().findByText("Edit model").should("be.visible").click();
-        cy.get("@slug").then(slug => {
+        cy.get("@slug").then((slug) => {
           cy.location("pathname").should("eq", `/model/${slug}/query`);
         });
       });
@@ -437,7 +438,7 @@ describe("scenarios > dashboard", () => {
         H.showDashboardCardActions();
         H.getDashboardCardMenu().click();
         H.popover().findByText("Edit metric").should("be.visible").click();
-        cy.get("@slug").then(slug => {
+        cy.get("@slug").then((slug) => {
           cy.location("pathname").should("eq", `/metric/${slug}/query`);
         });
       });
@@ -553,7 +554,7 @@ describe("scenarios > dashboard", () => {
 
         H.sidesheet().within(() => {
           cy.log("Markdown content should not be bigger than its container");
-          cy.findByTestId("editable-text").then($markdown => {
+          cy.findByTestId("editable-text").then(($markdown) => {
             const el = $markdown[0];
 
             // vertical
@@ -576,7 +577,7 @@ describe("scenarios > dashboard", () => {
           );
           cy.findByTestId("editable-text")
             .click()
-            .then($el => {
+            .then(($el) => {
               const lineHeight = parseFloat(
                 window.getComputedStyle($el[0]).lineHeight,
               );
@@ -586,6 +587,16 @@ describe("scenarios > dashboard", () => {
               );
             });
         });
+      });
+
+      it("should prevent entering a title longer than 254 chars", () => {
+        const longTitle = "A".repeat(256);
+        cy.findByTestId("dashboard-name-heading")
+          .as("dashboardInput")
+          .clear()
+          .type(longTitle, { delay: 0 })
+          .blur();
+        cy.get("@dashboardInput").invoke("text").should("have.length", 254);
       });
     });
 
@@ -634,6 +645,33 @@ describe("scenarios > dashboard", () => {
         H.getDashboardCard(1).contains("bottom");
       },
     );
+
+    it("should not save the dashboard when the user clicks 'Discard changes'", () => {
+      // Navigate to the dashboard via client-side navigation (to trigger the client-side "Discard changes" prompt)
+      cy.visit("/");
+      cy.findByTestId("main-navbar-root").findByText("Our analytics").click();
+      cy.findByTestId("collection-table")
+        .findByText(originalDashboardName)
+        .click();
+
+      cy.log("Make a change to the dashboard");
+      H.editDashboard();
+      cy.findByTestId("dashboard-empty-state")
+        .findByText("Add a chart")
+        .click();
+      H.sidebar().findByText("Orders, Count").click();
+      H.getDashboardCards().should("have.length", 1);
+
+      cy.log("Navigate back and discard changes");
+      cy.go("back");
+      H.modal().button("Discard changes").click();
+      cy.findByTestId("collection-table")
+        .findByText(originalDashboardName)
+        .click();
+
+      cy.log("Verify changes were not saved");
+      cy.findByTestId("dashboard-empty-state").should("exist");
+    });
   });
 
   describe("iframe cards", () => {
@@ -762,9 +800,8 @@ describe("scenarios > dashboard", () => {
     H.saveDashboard();
 
     cy.log("Assert that the selected filter is present in the dashboard");
-    cy.icon("location");
     // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.findByText("Location");
+    cy.findByText("Location", { exact: false }).should("be.visible");
   });
 
   it("should link filters to custom question with filtered aggregate data (metabase#11007)", () => {
@@ -886,7 +923,7 @@ describe("scenarios > dashboard", () => {
         });
 
         H.visitDashboard(dashboardId);
-        mapPinIcon().eq(0).click({ force: true });
+        H.mapPinIcon().eq(0).click({ force: true });
         cy.url().should("include", `/dashboard/${dashboardId}?id=1`);
         cy.contains("Hudson Borer - 1");
       });
@@ -1000,7 +1037,7 @@ describe("scenarios > dashboard", () => {
 
     H.filterWidget().as("filterWidget").click();
 
-    ["Doohickey", "Gadget", "Gizmo", "Widget"].forEach(category => {
+    ["Doohickey", "Gadget", "Gizmo", "Widget"].forEach((category) => {
       cy.findByText(category);
     });
 
@@ -1102,7 +1139,7 @@ describe("scenarios > dashboard", () => {
       row: 0,
       col: 0,
       size_x: 16,
-      size_y: 8,
+      size_y: 9,
     };
     const paddingCard = H.getTextCardDetails({
       col: 0,
@@ -1115,7 +1152,7 @@ describe("scenarios > dashboard", () => {
     H.createDashboard({ name: "Auto-scroll test", dashcards }).then(
       ({ body: dashboard }) => {
         const targetCard = dashboard.dashcards.find(
-          dc => dc.visualization_settings?.text === TARGET_TEXT,
+          (dc) => dc.visualization_settings?.text === TARGET_TEXT,
         );
 
         cy.log("should not be visible (below the fold)");
@@ -1199,38 +1236,39 @@ describe("scenarios > dashboard", () => {
     });
 
     cy.findByTestId("dashcard").findByText("Orders");
-
-    // Verify the card is visible when it returned an error
-    H.filterWidget().click();
-    H.dashboardParametersPopover().within(() => {
-      cy.findByPlaceholderText("Enter an ID").type("text{enter}");
-      cy.button("Add filter").click();
-    });
-
-    cy.findByTestId("dashcard").within(() => {
-      cy.findByText("There was a problem displaying this chart.");
-    });
   });
 
   describe("warn before leave", () => {
+    beforeEach(() => {
+      cy.intercept("GET", "/api/card/*/query_metadata").as("queryMetadata");
+    });
+
     it("should warn a user before leaving after adding, editing, or removing a card on a dashboard", () => {
       cy.visit("/");
+      cy.findByTestId("loading-indicator").should("not.exist");
+
+      cy.findByTestId("home-page").should(
+        "contain",
+        "Try out these sample x-rays to see what Metabase can do.",
+      );
 
       // add
       createNewDashboard();
       cy.findByTestId("dashboard-header").icon("add").click();
       cy.findByTestId("add-card-sidebar").findByText("Orders").click();
+      cy.wait("@queryMetadata");
       assertPreventLeave({ openSidebar: false });
       H.saveDashboard();
 
       // edit
       H.editDashboard();
-      const card = cy
-        .findAllByTestId("dashcard-container", { scrollBehavior: false })
-        .eq(0);
-      dragOnXAxis(card, 100);
+      const card = () =>
+        cy
+          .findAllByTestId("dashcard-container", { scrollBehavior: false })
+          .eq(0);
+      dragOnXAxis(card(), 100);
       assertPreventLeave();
-      H.saveDashboard();
+      H.saveDashboard({ waitMs: DASHBOARD_SAVE_WAIT_TIME });
 
       // remove
       H.editDashboard();
@@ -1238,45 +1276,53 @@ describe("scenarios > dashboard", () => {
       assertPreventLeave();
     });
 
-    it(
-      "should warn a user before leaving after adding, removed, moving, or duplicating a tab",
-      { tags: "@flaky" },
-      () => {
-        cy.visit("/");
+    it("should warn a user before leaving after adding, removing, moving, or duplicating a tab", () => {
+      cy.visit("/");
+      cy.findByTestId("loading-indicator").should("not.exist");
 
-        // add tab
-        createNewDashboard();
-        H.createNewTab();
-        assertPreventLeave();
-        H.saveDashboard();
+      // add tab
+      createNewDashboard();
+      H.createNewTab();
+      assertPreventLeave();
+      H.saveDashboard();
 
-        // move tab
-        H.editDashboard();
-        dragOnXAxis(cy.findByRole("tab", { name: "Tab 2" }), -200);
-        // assert tab order is now correct and ui has caught up to result of dragging the tab
-        cy.findAllByRole("tab").eq(0).should("have.text", "Tab 2");
-        cy.findAllByRole("tab").eq(1).should("have.text", "Tab 1");
-        assertPreventLeave();
-        H.saveDashboard();
+      // move tab
+      H.editDashboard();
+      dragOnXAxis(cy.findByRole("tab", { name: "Tab 2" }), -200);
+      // assert tab order is now correct and ui has caught up to result of dragging the tab
+      cy.findAllByRole("tab").eq(0).should("have.text", "Tab 2");
+      cy.findAllByRole("tab").eq(1).should("have.text", "Tab 1");
 
-        // duplicate tab
-        H.editDashboard();
-        H.duplicateTab("Tab 1");
-        assertPreventLeave();
-        H.saveDashboard();
+      cy.wait(1000);
+      assertPreventLeave();
+      H.saveDashboard();
 
-        // remove tab
-        H.editDashboard();
-        H.deleteTab("Copy of Tab 1");
-        assertPreventLeave();
-        H.saveDashboard();
+      // duplicate tab
+      H.editDashboard();
+      H.duplicateTab("Tab 1");
+      assertPreventLeave();
+      H.saveDashboard();
 
-        // rename tab
-        H.editDashboard();
-        H.renameTab("Tab 2", "Foo tab");
-        assertPreventLeave();
-      },
-    );
+      cy.findByRole("tab", { name: "Copy of Tab 1" }).should(
+        "have.attr",
+        "aria-selected",
+        "true",
+      );
+
+      // remove tab
+      H.editDashboard();
+      H.deleteTab("Copy of Tab 1");
+      // url is changed after removing the tab
+      // can be a side effect
+      cy.url().should("include", "tab-1");
+      assertPreventLeave();
+      H.saveDashboard({ waitMs: DASHBOARD_SAVE_WAIT_TIME });
+
+      // rename tab
+      H.editDashboard();
+      H.renameTab("Tab 2", "Foo tab");
+      assertPreventLeave();
+    });
 
     function createNewDashboard() {
       H.newButton("Dashboard").click();
@@ -1289,6 +1335,8 @@ describe("scenarios > dashboard", () => {
     function dragOnXAxis(el, distance) {
       el.trigger("mousedown", { clientX: 0 })
         .trigger("mousemove", { clientX: distance })
+        // to avoid flakiness
+        .wait(100)
         .trigger("mouseup");
     }
 
@@ -1307,7 +1355,7 @@ describe("scenarios > dashboard", () => {
   });
 });
 
-H.describeWithSnowplow("scenarios > dashboard", () => {
+describe("scenarios > dashboard", () => {
   beforeEach(() => {
     cy.intercept("GET", "/api/activity/recents?*").as("recentViews");
     H.resetSnowplow();
@@ -1335,7 +1383,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
       H.saveDashboard();
       validateIFrame("https://example.com");
 
-      H.expectGoodSnowplowEvent({
+      H.expectUnstructuredSnowplowEvent({
         event: "new_iframe_card_created",
         target_id: id,
         event_detail: "example.com",
@@ -1349,7 +1397,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
     const newTitle = "New title";
     cy.findByTestId("dashboard-name-heading").clear().type(newTitle).blur();
     H.saveDashboard();
-    H.expectGoodSnowplowEvent({
+    H.expectUnstructuredSnowplowEvent({
       event: "dashboard_saved",
     });
   });
@@ -1381,7 +1429,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
       /orders in a dashboard/i,
     );
 
-    H.expectGoodSnowplowEvent({
+    H.expectUnstructuredSnowplowEvent({
       event: "new_link_card_created",
     });
   });
@@ -1402,7 +1450,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
         .click({ force: true }) // disable
         .click({ force: true }); // enable
 
-      H.expectGoodSnowplowEvent(
+      H.expectUnstructuredSnowplowEvent(
         {
           event: "card_set_to_hide_when_no_results",
           dashboard_id: ORDERS_DASHBOARD_ID,
@@ -1454,7 +1502,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
           },
         }),
       ],
-    }).then(dashboard => H.visitDashboard(dashboard.id));
+    }).then((dashboard) => H.visitDashboard(dashboard.id));
 
     // new dashboards should default to 'fixed' width
     H.assertDashboardFixedWidth();
@@ -1464,7 +1512,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
     cy.findByLabelText("Toggle width").click();
     H.popover().findByText("Full width").click();
     H.assertDashboardFullWidth();
-    H.expectGoodSnowplowEvent({
+    H.expectUnstructuredSnowplowEvent({
       event: "dashboard_width_toggled",
       full_width: true,
     });
@@ -1479,9 +1527,35 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
     cy.findByLabelText("Toggle width").click();
     H.popover().findByText("Full width").click();
     H.assertDashboardFixedWidth();
-    H.expectGoodSnowplowEvent({
+    H.expectUnstructuredSnowplowEvent({
       event: "dashboard_width_toggled",
       full_width: false,
+    });
+  });
+
+  it("should track reverting to an old version", () => {
+    H.createDashboard({ name: "Foo" }).then(({ body: { id } }) => {
+      cy.request("PUT", `/api/dashboard/${id}`, { name: "Bar" });
+      H.visitDashboard(id);
+
+      cy.intercept("GET", "/api/revision*").as("revisionHistory");
+
+      cy.findByTestId("dashboard-header")
+        .findByLabelText("More info")
+        .should("be.visible")
+        .click();
+
+      H.sidesheet().within(() => {
+        cy.findByRole("tab", { name: "History" }).click();
+        cy.wait("@revisionHistory");
+        cy.findByTestId("dashboard-history-list").should("be.visible");
+        cy.findByTestId("question-revert-button").click();
+      });
+
+      H.expectUnstructuredSnowplowEvent({
+        event: "revert_version_clicked",
+        event_detail: "dashboard",
+      });
     });
   });
 });
@@ -1499,7 +1573,7 @@ function checkOptionsForFilter(filter) {
 }
 
 function assertScrollBarExists() {
-  cy.get("body").then($body => {
+  cy.get("body").then(($body) => {
     const bodyWidth = $body[0].getBoundingClientRect().width;
     cy.window().its("innerWidth").should("be.gte", bodyWidth);
   });
@@ -1522,52 +1596,58 @@ describe("LOCAL TESTING ONLY > dashboard", () => {
    *        - Then start the server and Cypress tests
    */
 
-  it.skip("dashboard filter should not show placeholder for translated languages (metabase#15694)", () => {
-    cy.request("GET", "/api/user/current").then(({ body: { id: USER_ID } }) => {
-      cy.request("PUT", `/api/user/${USER_ID}`, { locale: "fr" });
-    });
-    H.createQuestionAndDashboard({
-      questionDetails: {
-        name: "15694",
-        query: { "source-table": PEOPLE_ID },
-      },
-      dashboardDetails: {
-        parameters: [
-          {
-            name: "Location",
-            slug: "location",
-            id: "5aefc725",
-            type: "string/=",
-            sectionId: "location",
-          },
-        ],
-      },
-    }).then(({ body: { card_id, dashboard_id } }) => {
-      H.addOrUpdateDashboardCard({
-        card_id,
-        dashboard_id,
-        card: {
-          parameter_mappings: [
+  it(
+    "dashboard filter should not show placeholder for translated languages (metabase#15694)",
+    { tags: "@skip" },
+    () => {
+      cy.request("GET", "/api/user/current").then(
+        ({ body: { id: USER_ID } }) => {
+          cy.request("PUT", `/api/user/${USER_ID}`, { locale: "fr" });
+        },
+      );
+      H.createQuestionAndDashboard({
+        questionDetails: {
+          name: "15694",
+          query: { "source-table": PEOPLE_ID },
+        },
+        dashboardDetails: {
+          parameters: [
             {
-              parameter_id: "5aefc725",
-              card_id,
-              target: ["dimension", ["field", PEOPLE.STATE, null]],
+              name: "Location",
+              slug: "location",
+              id: "5aefc725",
+              type: "string/=",
+              sectionId: "location",
             },
           ],
         },
-      });
+      }).then(({ body: { card_id, dashboard_id } }) => {
+        H.addOrUpdateDashboardCard({
+          card_id,
+          dashboard_id,
+          card: {
+            parameter_mappings: [
+              {
+                parameter_id: "5aefc725",
+                card_id,
+                target: ["dimension", ["field", PEOPLE.STATE, null]],
+              },
+            ],
+          },
+        });
 
-      cy.visit(`/dashboard/${dashboard_id}?location=AK&location=CA`);
-      H.filterWidget().contains(/\{0\}/).should("not.exist");
-    });
-  });
+        cy.visit(`/dashboard/${dashboard_id}?location=AK&location=CA`);
+        H.filterWidget().contains(/\{0\}/).should("not.exist");
+      });
+    },
+  );
 });
 
 describe("scenarios > dashboard > caching", () => {
   beforeEach(() => {
     H.restore();
     cy.signInAsAdmin();
-    H.setTokenFeatures("all");
+    H.activateToken("pro-self-hosted");
   });
 
   /**
@@ -1753,7 +1833,7 @@ describe("scenarios > dashboard > entity id support", () => {
         { name: "Tab 2", id: -2 },
       ],
       dashcards: [],
-    }).then(dashboard => {
+    }).then((dashboard) => {
       cy.visit(
         `/dashboard/entity/${dashboard.entity_id}?tab=${dashboard.tabs[1].entity_id}`,
       );

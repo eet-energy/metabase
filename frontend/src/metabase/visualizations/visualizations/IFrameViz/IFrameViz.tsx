@@ -1,9 +1,9 @@
 import { useCallback, useMemo } from "react";
 import { jt, t } from "ttag";
 
+import ExternalLink from "metabase/common/components/ExternalLink";
+import Link from "metabase/common/components/Link";
 import { useDocsUrl, useSetting } from "metabase/common/hooks";
-import ExternalLink from "metabase/core/components/ExternalLink";
-import Link from "metabase/core/components/Link";
 import CS from "metabase/css/core/index.css";
 import { getParameterValues } from "metabase/dashboard/selectors";
 import { useSelector } from "metabase/lib/redux";
@@ -78,6 +78,7 @@ export function IFrameViz({
         dashboard,
         parameterValues,
         text: allowedIframeAttributes?.src,
+        urlEncode: true,
       }),
     [dashcard, dashboard, parameterValues, allowedIframeAttributes?.src],
   );
@@ -96,7 +97,7 @@ export function IFrameViz({
                 variant="filled"
                 style={{ pointerEvents: "all" }}
                 onClick={onTogglePreviewing}
-                onMouseDown={e => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
               >{t`Done`}</Button>
             </Box>
           </Group>
@@ -112,8 +113,8 @@ export function IFrameViz({
               h="100%"
               value={iframeOrUrl ?? ""}
               placeholder={`<iframe src="https://example.com" />`}
-              onChange={e => handleIFrameChange(e.target.value)}
-              onMouseDown={e => e.stopPropagation()}
+              onChange={(e) => handleIFrameChange(e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
               style={{ pointerEvents: "all" }}
             />
           </Box>

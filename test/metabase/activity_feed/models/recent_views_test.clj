@@ -4,7 +4,7 @@
    [clojure.test :refer :all]
    [java-time.api :as t]
    [metabase.activity-feed.models.recent-views :as recent-views]
-   [metabase.models.collection :as collection]
+   [metabase.collections.models.collection :as collection]
    [metabase.models.interface :as mi]
    [metabase.permissions.models.data-permissions :as data-perms]
    [metabase.test :as mt]
@@ -23,18 +23,21 @@
 
 (defn fixup [list-item]
   (-> list-item
+      (dissoc :entity_id)
       (update :parent_collection #(into {} %))
       (update :timestamp type)))
 
 (defn recent-views
   ([user-id] (recent-views user-id [:views]))
-  ([user-id context] (:recents (recent-views/get-recents user-id context))))
+  ([user-id context] (recent-views user-id context {}))
+  ([user-id context options] (:recents (recent-views/get-recents user-id context options))))
 
 (deftest simple-get-list-card-test
   (mt/with-temp
     [:model/Collection {coll-id :id} {:name "my coll"}
      :model/Database   {db-id :id}   {}
      :model/Card       {card-id :id} {:type "question" :name "name" :display "display" :collection_id coll-id :database_id db-id}]
+
     (recent-views/update-users-recent-views! (mt/user->id :rasta) :model/Card card-id :view)
     (is (= [{:description nil,
              :dashboard nil
@@ -46,7 +49,9 @@
              :display "display",
              :timestamp String
              :model :card
-             :database_id db-id}]
+             :database_id db-id
+             :dataset_query {}
+             :visualization_settings {}}]
            (mt/with-test-user :rasta
              (mapv fixup
                    (recent-views (mt/user->id :rasta))))))))
@@ -124,6 +129,7 @@
              :id my-coll-id
              :timestamp String
              :authority_level nil
+             :collection_type nil
              :model :collection}]
            (mt/with-test-user :rasta
              (mapv fixup
@@ -144,6 +150,7 @@
              :parent_collection {:id coll-id-c, :name "parent coll", :authority_level :official}
              :timestamp String
              :authority_level nil
+             :collection_type nil
              :model :collection}]
            (mt/with-test-user :rasta
              (mapv fixup
@@ -209,7 +216,6 @@
         (mt/with-temp
           [:model/Collection {parent-coll-id :id} {:name "parent"}
            :model/Database   {db-id :id} {:name "My DB"} ;; just needed for temp tables and card's db:
-
            :model/Card       {card-id :id} {:type "question" :name "my card" :description "this is my card" :collection_id parent-coll-id :database_id db-id}
            :model/Card       {model-id :id} {:type "model" :name "my model" :description "this is my model" :collection_id parent-coll-id :database_id db-id}
            :model/Card       {metric-id :id} {:type "metric" :name "my metric" :display "Metric" :collection_id parent-coll-id :database_id db-id}
@@ -238,6 +244,7 @@
                    :model :collection,
                    :can_write true,
                    :authority_level nil,
+                   :collection_type nil,
                    :parent_collection {:id "ID", :name "parent", :authority_level nil}}
                   {:id "ID",
                    :name "my dash",
@@ -271,7 +278,9 @@
                    :id "ID",
                    :display "table",
                    :model :card
-                   :database_id db-id}]
+                   :database_id db-id
+                   :dataset_query {}
+                   :visualization_settings {}}]
                  (mt/with-test-user :rasta
                    (with-redefs [mi/can-read? (constantly true)
                                  mi/can-write? (fn ([id] (not= id table-id))
@@ -280,6 +289,7 @@
                           (mapv (fn [rv] (cond-> rv
                                            true                                       (assoc :id "ID")
                                            true                                       (dissoc :timestamp)
+                                           true                                       (dissoc :entity_id)
                                            (-> rv :database :id)                      (assoc-in [:database :id] db-id)
                                            (some-> rv :parent_collection)             (update :parent_collection #(into {} %))
                                            (some-> rv :parent_collection :id number?) (assoc-in [:parent_collection :id] "ID")))))))))
@@ -589,3 +599,56 @@
              (map #(select-keys % [:id])
                   (mt/with-test-user :rasta
                     (recent-views (mt/user->id :rasta) [:selections :views]))))))))
+
+(deftest models-filtering-test
+  (mt/with-test-user :rasta
+    (mt/with-temp
+      [:model/Collection {coll-id :id} {:name "my coll"}
+       :model/Database   {db-id :id}   {}
+       :model/Card       {card-id :id} {:type "question" :name "card" :collection_id coll-id :database_id db-id}
+       :model/Card       {model-id :id} {:type "model" :name "model" :collection_id coll-id :database_id db-id}
+       :model/Dashboard  {dash-id :id} {:name "dash" :collection_id coll-id}
+       :model/Table      {table-id :id} {:name "table" :db_id db-id}]
+      (recent-views/update-users-recent-views! (mt/user->id :rasta) :model/Card card-id :view)
+      (recent-views/update-users-recent-views! (mt/user->id :rasta) :model/Card model-id :view)
+      (recent-views/update-users-recent-views! (mt/user->id :rasta) :model/Dashboard dash-id :view)
+      (recent-views/update-users-recent-views! (mt/user->id :rasta) :model/Table table-id :view)
+      (testing "no filter returns all model types"
+        (is (= #{:card :dataset :dashboard :table}
+               (->> (recent-views (mt/user->id :rasta))
+                    (map :model)
+                    set))))
+      (testing "filter to only cards"
+        (is (= #{:card}
+               (->> (recent-views (mt/user->id :rasta) [:views] {:models [:card]})
+                    (map :model)
+                    set))))
+      (testing "filter to only models (aka datasets)"
+        (is (= #{:dataset}
+               (->> (recent-views (mt/user->id :rasta) [:views] {:models [:dataset]})
+                    (map :model)
+                    set))))
+      (testing "filter to cards and dashboards"
+        (is (= #{:card :dashboard}
+               (->> (recent-views (mt/user->id :rasta) [:views] {:models [:card :dashboard]})
+                    (map :model)
+                    set))))
+      (testing "filter to only tables"
+        (is (= #{:table}
+               (->> (recent-views (mt/user->id :rasta) [:views] {:models [:table]})
+                    (map :model)
+                    set)))))))
+
+(deftest include-metadata-test
+  (mt/with-test-user :rasta
+    (mt/with-temp
+      [:model/Collection {coll-id :id} {:name "my coll"}
+       :model/Database   {db-id :id}   {}
+       :model/Card       {card-id :id} {:type "question" :name "card" :collection_id coll-id :database_id db-id}]
+      (recent-views/update-users-recent-views! (mt/user->id :rasta) :model/Card card-id :view)
+      (testing "by default, result_metadata is not included"
+        (is (not (contains? (first (recent-views (mt/user->id :rasta)))
+                            :result_metadata))))
+      (testing "with include-metadata? true, result_metadata is included"
+        (is (contains? (first (recent-views (mt/user->id :rasta) [:views] {:include-metadata? true}))
+                       :result_metadata))))))

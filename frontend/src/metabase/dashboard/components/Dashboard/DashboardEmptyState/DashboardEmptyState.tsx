@@ -9,7 +9,7 @@ interface DashboardEmptyStateProps {
   addQuestion?: () => void;
   isDashboardEmpty: boolean;
   isEditing?: boolean;
-  isNightMode: boolean;
+  canCreateQuestions?: boolean;
 }
 
 const getDefaultTitle = (isDashboardEmpty: boolean) =>
@@ -19,17 +19,11 @@ function InlineIcon({ name }: { name: IconName }) {
   return <Icon name={name} style={{ verticalAlign: "middle" }} />;
 }
 
-function EmptyStateWrapper({
-  isNightMode,
-  children,
-}: {
-  isNightMode: boolean;
-  children: ReactNode;
-}) {
+function EmptyStateWrapper({ children }: { children: ReactNode }) {
   return (
     <Stack
       align="center"
-      color={isNightMode ? "text-white" : "inherit"}
+      color="inherit"
       data-testid="dashboard-empty-state"
       h="100%"
       justify="center"
@@ -46,17 +40,21 @@ export function DashboardEmptyState({
   addQuestion,
   isDashboardEmpty,
   isEditing,
-  isNightMode,
+  canCreateQuestions,
 }: DashboardEmptyStateProps) {
-  const defaultTitle = getDefaultTitle(isDashboardEmpty);
+  let title = getDefaultTitle(isDashboardEmpty);
+  if (isEditing) {
+    title = canCreateQuestions
+      ? t`Create a new question or browse your collections for an existing one.`
+      : t`Browse your collections to find and add existing questions.`;
+  }
+
   return (
-    <EmptyStateWrapper isNightMode={isNightMode}>
+    <EmptyStateWrapper>
       <>
         <Stack align="center" maw="25rem" gap="xs">
-          <Title ta="center" order={2}>
-            {isEditing
-              ? t`Create a new question or browse your collections for an existing one.`
-              : defaultTitle}
+          <Title ta="center" order={3}>
+            {title}
           </Title>
 
           <Text ta="center" data-testid="dashboard-empty-state-copy">
@@ -82,12 +80,11 @@ export function DashboardEmptyState({
 
 export function DashboardEmptyStateWithoutAddPrompt({
   isDashboardEmpty,
-  isNightMode,
 }: DashboardEmptyStateProps) {
   const title = getDefaultTitle(isDashboardEmpty);
   return (
-    <EmptyStateWrapper isNightMode={isNightMode}>
-      <Title ta="center" order={2}>
+    <EmptyStateWrapper>
+      <Title ta="center" order={3}>
         {title}
       </Title>
     </EmptyStateWrapper>

@@ -1,5 +1,6 @@
 import type { RouterState } from "react-router-redux";
 
+import type { Api } from "metabase/api/api";
 import type { User } from "metabase-types/api";
 
 import type { AdminState } from "./admin";
@@ -8,7 +9,9 @@ import type { AuthState } from "./auth";
 import type { DashboardState } from "./dashboard";
 import type { DownloadsState } from "./downloads";
 import type { EmbedState } from "./embed";
+import type { EmbeddingDataPickerState } from "./embedding-data-picker";
 import type { EntitiesState } from "./entities";
+import type { ModalState } from "./modal";
 import type { ParametersState } from "./parameters";
 import type { QueryBuilderState } from "./qb";
 import type { RequestsState } from "./requests";
@@ -16,8 +19,9 @@ import type { SettingsState } from "./settings";
 import type { SetupState } from "./setup";
 import type { UndoState } from "./undo";
 import type { FileUploadState } from "./upload";
+import type { VisualizerState } from "./visualizer";
 
-type ModalName = null | "collection" | "dashboard" | "action";
+type MetabaseApiState = ReturnType<typeof Api.reducer>;
 
 export interface State {
   admin: AdminState;
@@ -26,6 +30,7 @@ export interface State {
   currentUser: User | null;
   dashboard: DashboardState;
   embed: EmbedState;
+  embeddingDataPicker: EmbeddingDataPickerState;
   entities: EntitiesState;
   parameters: ParametersState;
   qb: QueryBuilderState;
@@ -34,9 +39,15 @@ export interface State {
   settings: SettingsState;
   setup: SetupState;
   upload: FileUploadState;
-  modal: ModalName;
+  modal: ModalState;
   undo: UndoState;
   downloads: DownloadsState;
+  visualizer: {
+    past: VisualizerState[];
+    present: VisualizerState;
+    future: VisualizerState[];
+  };
+  "metabase-api": MetabaseApiState;
 }
 
 export type Dispatch<T = any> = (action: T) => unknown | Promise<unknown>;

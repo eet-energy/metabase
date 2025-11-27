@@ -56,7 +56,7 @@ const DefaultTemplate = (args: TextProps) => (
 
 const SizeTemplate = (args: TextProps) => (
   <Grid align="center" maw="18rem">
-    {argTypes.size.options.map(size => (
+    {argTypes.size.options.map((size) => (
       <Fragment key={size}>
         <Grid.Col span={2}>
           <Text fw="bold">{size}</Text>
@@ -70,7 +70,7 @@ const SizeTemplate = (args: TextProps) => (
 );
 
 export default {
-  title: "Typography/Text",
+  title: "Design System/Typography/Text",
   component: Text,
   args,
   argTypes,

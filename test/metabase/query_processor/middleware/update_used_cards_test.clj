@@ -1,9 +1,12 @@
 (ns metabase.query-processor.middleware.update-used-cards-test
+  {:clj-kondo/config '{:linters
+                       ;; allowing `with-temp` here since this actually tests what we persist to the app DB
+                       {:discouraged-var {metabase.test/with-temp {:level :off}}}}}
   (:require
    [clojure.test :refer :all]
    [java-time.api :as t]
-   [metabase.dashboard-subscription-test :as dashboard-subscription-test]
    [metabase.notification.test-util :as notification.tu]
+   [metabase.pulse.dashboard-subscription-test :as dashboard-subscription-test]
    [metabase.pulse.send :as pulse.send]
    [metabase.pulse.send-test :as pulse.send-test]
    [metabase.query-processor :as qp]
@@ -35,6 +38,8 @@
   "Check if `last_used_at` of `card-id` is nil, then execute `f`, then check that `last_used_at` is non nil."
   [card-id thunk]
   (assert (fn? thunk))
+  (t2/update! (t2/table-name :model/Card) card-id {:last_used_at #t "2025-05-16T12:40:00-07:00"
+                                                   :updated_at   #t "2025-05-16T12:40:00-07:00"})
   (let [original-last-used-at (card-last-used-at card-id)
         original-updated-at   (card-updated-at card-id)]
     (mt/with-temporary-setting-values [synchronous-batch-updates true]
@@ -64,8 +69,8 @@
                                                              :template-tags {"#card" {:card-id      card-id
                                                                                       :display-name "card"
                                                                                       :id           "card"
-                                                                                      :name         "card"
-                                                                                      :type         "card"}}}))))))
+                                                                                      :name         "#card"
+                                                                                      :type         :card}}}))))))
 
 (deftest alert-test
   (with-used-cards-setup!

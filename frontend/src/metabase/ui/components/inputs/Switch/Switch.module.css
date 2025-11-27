@@ -1,9 +1,9 @@
 .root {
-  &[data-label-position="left"] .labelWrapper {
+  &[data-label-position="left"] .labelWrapper:not(:empty) {
     padding-right: var(--switch-padding);
   }
 
-  &[data-label-position="right"] .labelWrapper {
+  &[data-label-position="right"] .labelWrapper:not(:empty) {
     padding-left: var(--switch-padding);
   }
 
@@ -19,6 +19,11 @@
 
   &[data-error] .track {
     border: 1px solid var(--mb-color-accent-3);
+  }
+
+  .body {
+    display: flex;
+    align-items: center;
   }
 
   &[data-variant="stretch"] {
@@ -80,7 +85,7 @@
   }
 
   input:checked + & {
-    background-color: var(--mb-color-background-brand);
+    background-color: var(--mb-color-brand);
   }
 
   input:disabled + & {
@@ -95,5 +100,9 @@
 
   input:disabled + * > & {
     background-color: var(--mb-color-bg-light);
+  }
+
+  &::before {
+    display: none;
   }
 }

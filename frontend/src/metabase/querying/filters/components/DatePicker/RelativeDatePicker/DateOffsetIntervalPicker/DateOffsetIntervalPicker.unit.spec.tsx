@@ -1,26 +1,24 @@
 import _userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 
-import {
-  mockScrollIntoView,
-  renderWithProviders,
-  screen,
-} from "__support__/ui";
+import { renderWithProviders, screen } from "__support__/ui";
 import { DATE_PICKER_UNITS } from "metabase/querying/filters/constants";
 import type {
   DatePickerUnit,
+  RelativeDatePickerValue,
   RelativeIntervalDirection,
 } from "metabase/querying/filters/types";
 
-import type { DateOffsetIntervalValue } from "../types";
+import type { DatePickerSubmitButtonProps } from "../../types";
 
 import { DateOffsetIntervalPicker } from "./DateOffsetIntervalPicker";
 
 function getDefaultValue(
   direction: RelativeIntervalDirection,
-): DateOffsetIntervalValue {
+): RelativeDatePickerValue {
   return {
     type: "relative",
-    value: direction === "last" ? -30 : 30,
+    value: direction === "past" ? -30 : 30,
     unit: "day",
     offsetValue: -14,
     offsetUnit: "day",
@@ -32,17 +30,15 @@ const userEvent = _userEvent.setup({
 });
 
 interface SetupOpts {
-  value: DateOffsetIntervalValue;
+  value: RelativeDatePickerValue;
   availableUnits?: DatePickerUnit[];
-  submitButtonLabel?: string;
+  renderSubmitButton?: (props: DatePickerSubmitButtonProps) => ReactNode;
 }
-
-mockScrollIntoView();
 
 function setup({
   value,
   availableUnits = DATE_PICKER_UNITS,
-  submitButtonLabel = "Apply",
+  renderSubmitButton,
 }: SetupOpts) {
   const onChange = jest.fn();
   const onSubmit = jest.fn();
@@ -51,7 +47,7 @@ function setup({
     <DateOffsetIntervalPicker
       value={value}
       availableUnits={availableUnits}
-      submitButtonLabel={submitButtonLabel}
+      renderSubmitButton={renderSubmitButton}
       onChange={onChange}
       onSubmit={onSubmit}
     />,
@@ -66,9 +62,9 @@ describe("DateOffsetIntervalPicker", () => {
     jest.setSystemTime(new Date(2020, 0, 1));
   });
 
-  describe.each<RelativeIntervalDirection>(["last", "next"])(
+  describe.each<RelativeIntervalDirection>(["past", "future"])(
     "%s",
-    direction => {
+    (direction) => {
       const defaultValue = getDefaultValue(direction);
 
       it("should change the interval", async () => {
@@ -82,7 +78,7 @@ describe("DateOffsetIntervalPicker", () => {
 
         expect(onChange).toHaveBeenLastCalledWith({
           ...defaultValue,
-          value: direction === "last" ? -20 : 20,
+          value: direction === "past" ? -20 : 20,
         });
         expect(onSubmit).not.toHaveBeenCalled();
 
@@ -101,7 +97,7 @@ describe("DateOffsetIntervalPicker", () => {
 
         expect(onChange).toHaveBeenLastCalledWith({
           ...defaultValue,
-          value: direction === "last" ? -10 : 10,
+          value: direction === "past" ? -10 : 10,
         });
         expect(onSubmit).not.toHaveBeenCalled();
       });
@@ -118,7 +114,7 @@ describe("DateOffsetIntervalPicker", () => {
 
         expect(onChange).toHaveBeenLastCalledWith({
           ...defaultValue,
-          value: direction === "last" ? -1 : 1,
+          value: direction === "past" ? -1 : 1,
         });
         expect(onSubmit).not.toHaveBeenCalled();
       });
@@ -179,7 +175,7 @@ describe("DateOffsetIntervalPicker", () => {
         expect(screen.getByText("years")).toBeInTheDocument();
         expect(screen.queryByText("months")).not.toBeInTheDocument();
 
-        const suffix = direction === "last" ? "ago" : "from now";
+        const suffix = direction === "past" ? "ago" : "from now";
         await userEvent.click(
           screen.getByRole("textbox", { name: "Starting from unit" }),
         );
@@ -199,7 +195,7 @@ describe("DateOffsetIntervalPicker", () => {
 
         expect(onChange).toHaveBeenLastCalledWith({
           ...defaultValue,
-          offsetValue: direction === "last" ? -20 : 20,
+          offsetValue: direction === "past" ? -20 : 20,
         });
         expect(onSubmit).not.toHaveBeenCalled();
       });
@@ -215,7 +211,7 @@ describe("DateOffsetIntervalPicker", () => {
 
         expect(onChange).toHaveBeenLastCalledWith({
           ...defaultValue,
-          offsetValue: direction === "last" ? -10 : 10,
+          offsetValue: direction === "past" ? -10 : 10,
         });
         expect(onSubmit).not.toHaveBeenCalled();
       });
@@ -271,7 +267,7 @@ describe("DateOffsetIntervalPicker", () => {
           value: defaultValue,
         });
 
-        const unitText = direction === "last" ? "years ago" : "years from now";
+        const unitText = direction === "past" ? "years ago" : "years from now";
         await userEvent.click(
           screen.getByRole("textbox", { name: "Starting from unit" }),
         );
@@ -313,7 +309,7 @@ describe("DateOffsetIntervalPicker", () => {
           value: defaultValue,
         });
         const rangeText =
-          direction === "last"
+          direction === "past"
             ? "Nov 18 – Dec 17, 2019"
             : "Dec 19, 2019 – Jan 17, 2020";
         expect(screen.getByText(rangeText)).toBeInTheDocument();
@@ -332,6 +328,14 @@ describe("DateOffsetIntervalPicker", () => {
           offsetUnit: undefined,
         });
         expect(onSubmit).not.toHaveBeenCalled();
+      });
+
+      it("should pass the value to the submit button callback", async () => {
+        const renderSubmitButton = jest.fn().mockReturnValue(null);
+        setup({ value: defaultValue, renderSubmitButton });
+        expect(renderSubmitButton).toHaveBeenCalledWith({
+          value: defaultValue,
+        });
       });
     },
   );

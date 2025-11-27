@@ -1,15 +1,18 @@
 (ns metabase.revisions.impl.card
   (:require
+   [metabase.queries.core :as queries]
    [metabase.revisions.models.revision :as revision]))
 
 (def ^:private excluded-columns-for-card-revision
   #{:cache_invalidated_at
     :created_at
     :creator_id
+    :document_id
     :entity_id
     :id
     :initially_published_at
     :last_used_at
+    :legacy_query
     :made_public_by_id
     :metabase_version
     :public_uuid
@@ -21,7 +24,9 @@
   ;; make sure we handle < 50 cards that had `:dataset` instead of `:type`
   (let [serialized-card (cond-> serialized-card
                           (contains? serialized-card :dataset) (-> (dissoc :dataset)
-                                                                   (assoc :type (if (:dataset serialized-card) :model :question))))]
+                                                                   (assoc :type (if (:dataset serialized-card) :model :question)))
+                          ;; Add the default `:card_schema` if it's missing.
+                          (not (:card_schema serialized-card)) (assoc :card_schema queries/starting-card-schema-version))]
     ((get-method revision/revert-to-revision! :default) model id user-id serialized-card)))
 
 (defn- model?

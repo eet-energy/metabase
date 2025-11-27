@@ -7,23 +7,22 @@
    [clojure.set :refer [difference]]
    [hiccup.core :refer [html]]
    [hiccup.page :refer [html5]]
+   [medley.core :as m]
    [metabase.api.common :as api]
-   [metabase.api.common.validation :as validation]
    [metabase.api.macros :as api.macros]
    [metabase.api.routes.common]
-   [metabase.channel.email :as email]
    [metabase.channel.render.core :as channel.render]
-   [metabase.config :as config]
-   [metabase.events :as events]
-   [metabase.integrations.slack :as slack]
-   [metabase.models.collection :as collection]
+   [metabase.channel.settings :as channel.settings]
+   [metabase.channel.slack :as channel.slack]
+   [metabase.channel.urls :as urls]
+   [metabase.classloader.core :as classloader]
+   [metabase.collections.models.collection :as collection]
+   [metabase.config.core :as config]
+   [metabase.events.core :as events]
    [metabase.models.interface :as mi]
    [metabase.notification.core :as notification]
    [metabase.permissions.core :as perms]
-   [metabase.plugins.classloader :as classloader]
    [metabase.premium-features.core :as premium-features]
-   ^{:clj-kondo/ignore [:deprecated-namespace]}
-   [metabase.pulse.api.alert :as api.alert]
    [metabase.pulse.models.pulse :as models.pulse]
    [metabase.pulse.models.pulse-channel :as pulse-channel]
    [metabase.pulse.send :as pulse.send]
@@ -32,7 +31,6 @@
    [metabase.util :as u]
    [metabase.util.i18n :refer [tru]]
    [metabase.util.malli.schema :as ms]
-   [metabase.util.urls :as urls]
    [toucan2.core :as t2])
   (:import
    (java.io ByteArrayInputStream)))
@@ -42,6 +40,11 @@
 (when config/ee-available?
   (classloader/require 'metabase-enterprise.sandbox.api.util
                        'metabase-enterprise.advanced-permissions.common))
+
+(defn email-channel
+  "Get email channel from an alert."
+  [alert]
+  (m/find-first #(= :email (keyword (:channel_type %))) (:channels alert)))
 
 (defn- maybe-filter-pulses-recipients
   "If the current user is sandboxed, remove all Metabase users from the `pulses` recipient lists that are not the user
@@ -72,6 +75,9 @@
                 (fn [channels]
                   (map #(dissoc % :recipients) channels))))))
 
+;; TODO (Cam 10/28/25) -- fix this endpoint so it uses kebab-case for query parameters for consistency with the rest
+;; of the REST API
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-query-params-use-kebab-case]}
 (api.macros/defendpoint :get "/"
   "Fetch all dashboard subscriptions. By default, returns only subscriptions for which the current user has write
   permissions. For admins, this is all subscriptions; for non-admins, it is only subscriptions that they created.
@@ -103,14 +109,6 @@
                                pulses)]
     (t2/hydrate pulses :can_write)))
 
-(defn check-card-read-permissions
-  "Users can only create a pulse for `cards` they have access to."
-  [cards]
-  (doseq [card cards
-          :let [card-id (u/the-id card)]]
-    (assert (integer? card-id))
-    (api/read-check :model/Card card-id)))
-
 (api.macros/defendpoint :post "/"
   "Create a new `Pulse`."
   [_route-params
@@ -129,16 +127,7 @@
        [:collection_position {:optional true} [:maybe ms/PositiveInt]]
        [:dashboard_id        {:optional true} [:maybe ms/PositiveInt]]
        [:parameters          {:optional true} [:maybe [:sequential :map]]]]]
-  (validation/check-has-application-permission :subscription false)
-  ;; make sure we are allowed to *read* all the Cards we want to put in this Pulse
-  (check-card-read-permissions cards)
-  ;; if we're trying to create this Pulse inside a Collection, and it is not a dashboard subscription,
-  ;; make sure we have write permissions for that collection
-  (when-not dashboard-id
-    (collection/check-write-perms-for-collection collection-id))
-  ;; prohibit creating dashboard subs if the the user doesn't have at least read access for the dashboard
-  (when dashboard-id
-    (api/read-check :model/Dashboard dashboard-id))
+  (perms/check-has-application-permission :subscription false)
   (let [pulse-data {:name                name
                     :creator_id          api/*current-user-id*
                     :skip_if_empty       skip-if-empty
@@ -146,6 +135,7 @@
                     :collection_position collection-position
                     :dashboard_id        dashboard-id
                     :parameters          parameters}]
+    (api/create-check :model/Pulse (assoc pulse-data :cards cards))
     (t2/with-transaction [_conn]
       ;; Adding a new pulse at `collection_position` could cause other pulses in this collection to change position,
       ;; check that and fix it if needed
@@ -176,7 +166,7 @@
   (if (perms/sandboxed-or-impersonated-user?)
     (let [recipients-to-add (filter
                              (fn [{id :id}] (and id (not= id api/*current-user-id*)))
-                             (:recipients (api.alert/email-channel pulse-before-update)))]
+                             (:recipients (email-channel pulse-before-update)))]
       (assoc pulse-updates :channels
              (for [channel (:channels pulse-updates)]
                (if (= "email" (:channel_type channel))
@@ -184,6 +174,14 @@
                         (concat (:recipients channel) recipients-to-add))
                  channel))))
     pulse-updates))
+
+(defn check-card-read-permissions
+  "Users can only create a pulse for `cards` they have access to."
+  [cards]
+  (doseq [card cards
+          :let [card-id (u/the-id card)]]
+    (assert (integer? card-id))
+    (api/read-check :model/Card card-id)))
 
 (api.macros/defendpoint :put "/:id"
   "Update a Pulse with `id`."
@@ -200,9 +198,9 @@
                                           [:parameters    {:optional true} [:maybe [:sequential ms/Map]]]]]
   ;; do various perms checks
   (try
-    (validation/check-has-application-permission :monitoring)
+    (perms/check-has-application-permission :monitoring)
     (catch clojure.lang.ExceptionInfo _e
-      (validation/check-has-application-permission :subscription false)))
+      (perms/check-has-application-permission :subscription false)))
 
   (let [pulse-before-update (api/write-check (models.pulse/retrieve-pulse id))]
     (check-card-read-permissions cards)
@@ -211,8 +209,8 @@
     ;; if advanced-permissions is enabled, only superuser or non-admin with subscription permission can
     ;; update pulse's recipients
     (when (premium-features/enable-advanced-permissions?)
-      (let [to-add-recipients (difference (set (map :id (:recipients (api.alert/email-channel pulse-updates))))
-                                          (set (map :id (:recipients (api.alert/email-channel pulse-before-update)))))
+      (let [to-add-recipients (difference (set (map :id (:recipients (email-channel pulse-updates))))
+                                          (set (map :id (:recipients (email-channel pulse-before-update)))))
             current-user-has-application-permissions?
             (and (premium-features/enable-advanced-permissions?)
                  (resolve 'metabase-enterprise.advanced-permissions.common/current-user-has-application-permissions?))
@@ -237,13 +235,15 @@
   ;; return updated Pulse
   (models.pulse/retrieve-pulse id))
 
+;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
 (api.macros/defendpoint :get "/form_input"
   "Provides relevant configuration information and user choices for creating/updating Pulses."
   []
-  (validation/check-has-application-permission :subscription false)
+  (perms/check-has-application-permission :subscription false)
   (let [chan-types (-> pulse-channel/channel-types
-                       (assoc-in [:slack :configured] (slack/slack-configured?))
-                       (assoc-in [:email :configured] (email/email-configured?))
+                       (assoc-in [:slack :configured] (channel.slack/slack-configured?))
+                       (assoc-in [:email :configured] (channel.settings/email-configured?))
                        (assoc-in [:http :configured] (t2/exists? :model/Channel :type :channel/http :active true)))]
     {:channels (cond
                  (perms/sandboxed-or-impersonated-user?)
@@ -256,10 +256,10 @@
                  ;; if we have Slack enabled return cached channels and users
                  :else
                  (try
-                   (future (slack/refresh-channels-and-usernames-when-needed!))
+                   (future (channel.slack/refresh-channels-and-usernames-when-needed!))
                    (assoc-in chan-types
                              [:slack :fields 0 :options]
-                             (->> (slack/slack-cached-channels-and-usernames)
+                             (->> (channel.settings/slack-cached-channels-and-usernames)
                                   :channels
                                   (map :display-name)))
                    (catch Throwable e
@@ -278,6 +278,8 @@
        :context     :pulse
        :card-id     card-id}))))
 
+;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
 (api.macros/defendpoint :get "/preview_card/:id"
   "Get HTML rendering of a Card with `id`."
   [{:keys [id]} :- [:map
@@ -293,6 +295,8 @@
                                                               result
                                                               {:channel.render/include-title? true, :channel.render/include-buttons? true})]])}))
 
+;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
 (api.macros/defendpoint :get "/preview_dashboard/:id"
   "Get HTML rendering of a Dashboard with `id`.
 
@@ -314,6 +318,8 @@
               [:body [:h2 (format "Backend Artifacts Preview for Dashboard %s" id)]
                (channel.render/render-dashboard-to-html id)]))})
 
+;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
 (api.macros/defendpoint :get "/preview_card_info/:id"
   "Get JSON object containing HTML rendering of a Card with `id` and other information."
   [{:keys [id]} :- [:map
@@ -336,16 +342,21 @@
 
 (def ^:private preview-card-width 400)
 
+;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
 (api.macros/defendpoint :get "/preview_card_png/:id"
-  "Get PNG rendering of a Card with `id`."
+  "Get PNG rendering of a Card with `id`. Optionally specify `width` as a query parameter."
   [{:keys [id]} :- [:map
-                    [:id ms/PositiveInt]]]
+                    [:id ms/PositiveInt]]
+   {:keys [width]} :- [:map
+                       [:width {:optional true} [:maybe ms/PositiveInt]]]]
   (let [card   (api/read-check :model/Card id)
         result (pulse-card-query-results card)
+        width  (or width preview-card-width)
         ba     (channel.render/render-pulse-card-to-png (channel.render/defaulted-timezone card)
                                                         card
                                                         result
-                                                        preview-card-width
+                                                        width
                                                         {:channel.render/include-title? true})]
     {:status 200, :headers {"Content-Type" "image/png"}, :body (ByteArrayInputStream. ba)}))
 
@@ -370,7 +381,7 @@
   ;; make sure any email addresses that are specified are allowed before sending the test Pulse.
   (doseq [channel channels]
     (pulse-channel/validate-email-domains channel))
-  (binding [notification/*default-options* {:notification/sync? true}]
+  (notification/with-default-options {:notification/sync? true}
     (pulse.send/send-pulse! (assoc body :creator_id api/*current-user-id*)))
   {:ok true})
 

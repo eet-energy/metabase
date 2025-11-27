@@ -50,10 +50,11 @@ export const TabsView = <
         <Tabs.List
           h="2.5rem"
           style={{
+            // eslint-disable-next-line no-color-literals
             "--tab-border-color": "rgba(0, 0, 0, 0)",
           }}
         >
-          {tabs.map(tab => {
+          {tabs.map((tab) => {
             const { id, icon, displayName } = tab;
 
             return (
@@ -68,10 +69,10 @@ export const TabsView = <
             );
           })}
         </Tabs.List>
-        {tabs.find(tab => tab.id === selectedTabId)?.extraButtons || null}
+        {tabs.find((tab) => tab.id === selectedTabId)?.extraButtons || null}
       </Flex>
 
-      {tabs.map(tab => {
+      {tabs.map((tab) => {
         const { id } = tab;
 
         return (
@@ -84,7 +85,7 @@ export const TabsView = <
             }}
           >
             {tab.render({
-              onItemSelect: item => onItemSelect(item, id),
+              onItemSelect: (item) => onItemSelect(item, id),
             })}
           </Tabs.Panel>
         );

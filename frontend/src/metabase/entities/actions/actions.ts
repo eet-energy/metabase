@@ -65,7 +65,7 @@ const defaultImplicitActionCreateOptions = {
 };
 
 const enableImplicitActionsForModel =
-  async (modelId: number, options = defaultImplicitActionCreateOptions) =>
+  (modelId: number, options = defaultImplicitActionCreateOptions) =>
   async (dispatch: Dispatch) => {
     // We're ordering actions that's most recently created first.
     // So if we want to show Create, Update, Delete, then we need
@@ -211,13 +211,13 @@ const Actions = createEntity({
     switch (type) {
       case CREATE_PUBLIC_LINK: {
         const { id, uuid } = payload;
-        return updateIn(state, [id], action => {
+        return updateIn(state, [id], (action) => {
           return { ...action, public_uuid: uuid };
         });
       }
       case DELETE_PUBLIC_LINK: {
         const { id } = payload;
-        return updateIn(state, [id], action => {
+        return updateIn(state, [id], (action) => {
           return { ...action, public_uuid: null };
         });
       }

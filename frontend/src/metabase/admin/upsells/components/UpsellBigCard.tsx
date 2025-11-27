@@ -1,11 +1,16 @@
+import cx from "classnames";
 import { useMount } from "react-use";
+import { P, match } from "ts-pattern";
 
-import ExternalLink from "metabase/core/components/ExternalLink";
+import ExternalLink from "metabase/common/components/ExternalLink";
 import { Box, Flex, Image, Stack, Text, Title } from "metabase/ui";
 
+import { UPGRADE_URL } from "../constants";
+
+import S from "./UpsellBigCard.module.css";
+import StylesUpsellCtaLink from "./UpsellCta.module.css";
 import { UpsellGem } from "./UpsellGem";
 import { UpsellWrapper } from "./UpsellWrapper";
-import S from "./Upsells.module.css";
 import { trackUpsellClicked, trackUpsellViewed } from "./analytics";
 import { useUpsellLink } from "./use-upsell-link";
 
@@ -20,11 +25,11 @@ export type UpsellBigCardProps = React.PropsWithChildren<{
   (
     | {
         buttonLink: string;
-        onOpenModal?: never;
+        onClick?: never;
       }
     | {
-        buttonLink?: never;
-        onOpenModal: () => void;
+        buttonLink?: string;
+        onClick: () => void;
       }
   );
 
@@ -34,8 +39,8 @@ export const _UpsellBigCard: React.FC<UpsellBigCardProps> = ({
   buttonLink,
   campaign,
   illustrationSrc,
-  onOpenModal,
-  source,
+  onClick,
+  source: location,
   children,
   ...props
 }: UpsellBigCardProps) => {
@@ -43,48 +48,60 @@ export const _UpsellBigCard: React.FC<UpsellBigCardProps> = ({
     // The fallback url only applies when the button opens a modal instead of
     // navigating to an external url. The value is not used otherwise. It is
     // there only because we cannot conditionally skip the hook.
-    url: buttonLink ?? "https://www.metabase.com/upgrade",
+    url: buttonLink ?? UPGRADE_URL,
     campaign,
-    source,
+    location,
   });
 
   useMount(() => {
-    trackUpsellViewed({ source, campaign });
+    trackUpsellViewed({ location, campaign });
   });
+
+  const ctaClassnames = cx(
+    StylesUpsellCtaLink.UpsellCTALink,
+    StylesUpsellCtaLink.Large,
+  );
 
   return (
     <Box
       data-testid="upsell-big-card"
       className={S.UpsellBigCardComponent}
+      bg="bg-white"
       {...props}
     >
       <Flex px="xl" py="md">
         <UpsellGem size={24} />
         <Stack align="flex-start" gap={0} ml="0.75rem" maw="18.75rem">
-          <Title order={1} lh={1} mb="sm">
+          <Title order={2} lh={1} mb="sm">
             {title}
           </Title>
           <Text lh="xl" mb="lg">
             {children}
           </Text>
-          {buttonLink ? (
-            <ExternalLink
-              className={S.UpsellCTALink}
-              href={url}
-              onClickCapture={() => trackUpsellClicked({ source, campaign })}
-            >
-              {buttonText}
-            </ExternalLink>
-          ) : (
-            <Box
-              component="button"
-              className={S.UpsellCTALink}
-              onClickCapture={() => trackUpsellClicked({ source, campaign })}
-              onClick={onOpenModal}
-            >
-              {buttonText}
-            </Box>
-          )}
+          {match(onClick)
+            .with(P.nonNullable, () => (
+              <Box
+                component="button"
+                className={ctaClassnames}
+                onClickCapture={() =>
+                  trackUpsellClicked({ location, campaign })
+                }
+                onClick={onClick}
+              >
+                {buttonText}
+              </Box>
+            ))
+            .otherwise(() => (
+              <ExternalLink
+                className={ctaClassnames}
+                href={url}
+                onClickCapture={() =>
+                  trackUpsellClicked({ location, campaign })
+                }
+              >
+                {buttonText}
+              </ExternalLink>
+            ))}
         </Stack>
       </Flex>
       {illustrationSrc && (

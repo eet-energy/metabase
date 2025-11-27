@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { t } from "ttag";
 
+import ExternalLink from "metabase/common/components/ExternalLink";
 import { useDocsUrl, useUserSetting } from "metabase/common/hooks";
-import ExternalLink from "metabase/core/components/ExternalLink";
 import {
   Button,
   Flex,
@@ -44,12 +44,12 @@ export const ModelExplanationBanner = () => {
       mb="xl"
     >
       <Flex>
-        <ModelsVideoThumbnail onClick={() => setOpened(true)} />
+        {showMetabaseLinks && (
+          <ModelsVideoThumbnail onClick={() => setOpened(true)} />
+        )}
         <Stack gap="md">
           <Title
-            order={2}
-            size="md"
-            lh={1}
+            order={6}
             m={0}
           >{t`Create models to clean up and combine tables to make your data easier to explore`}</Title>
           <Text size="md" lh="1.5">
@@ -62,7 +62,7 @@ export const ModelExplanationBanner = () => {
               </Button>
             )}
             <Button variant="subtle" p={0} onClick={dismissBanner}>
-              Dismiss
+              {t`Dismiss`}
             </Button>
           </Group>
         </Stack>

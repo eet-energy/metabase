@@ -73,7 +73,7 @@ describe("scenarios > embedding > native questions", () => {
         assert.deepEqual(actual, expected);
       });
 
-      cy.get("@questionId").then(questionId => {
+      cy.get("@questionId").then((questionId) => {
         const payload = {
           resource: { question: questionId },
           params: { total: [] },
@@ -113,19 +113,14 @@ describe("scenarios > embedding > native questions", () => {
       cy.contains("Affiliate").should("not.exist");
 
       // Let's try to remove one filter
-      // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-      cy.findByText("Q2 2023")
-        .closest("fieldset")
-        .within(() => {
-          cy.icon("close").click();
-        });
+      H.filterWidget({ name: "Q2 2023" }).icon("close").click();
 
       // Order ID is 926 - there should be only one result after this
       H.filterWidget().contains("Order ID").click();
       cy.findByPlaceholderText("Enter an ID").type("926");
       cy.button("Add filter").click();
 
-      cy.findByTestId("table-row").should("have.length", 1);
+      cy.findAllByRole("row").should("have.length", 1);
 
       // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
       cy.findByText("December 29, 2024, 4:54 AM");
@@ -134,10 +129,11 @@ describe("scenarios > embedding > native questions", () => {
       // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
       cy.findByText("Sid Mills").should("not.exist");
 
-      cy.location("search").should(
-        "eq",
-        "?id=926&created_at=&state=KS&product_id=10",
-      );
+      cy.location("search")
+        .should("include", "product_id=10")
+        .and("include", "created_at=")
+        .and("include", "id=926")
+        .and("include", "state=KS");
     });
 
     it("should handle required parameters", () => {
@@ -181,7 +177,9 @@ describe("scenarios > embedding > native questions", () => {
         .click();
 
       // Open variable editor
-      cy.findByTestId("native-query-editor-sidebar").icon("variable").click();
+      cy.findByTestId("native-query-editor-action-buttons")
+        .icon("variable")
+        .click();
 
       // Now check that all disabled parameters can't be required and the rest can
       assertRequiredEnabledForName({ name: "id", enabled: true });
@@ -202,7 +200,7 @@ describe("scenarios > embedding > native questions", () => {
     });
 
     it("should hide filters via url", () => {
-      cy.get("@questionId").then(questionId => {
+      cy.get("@questionId").then((questionId) => {
         cy.request("PUT", `/api/card/${questionId}`, {
           enable_embedding: true,
           embedding_params: {
@@ -228,7 +226,7 @@ describe("scenarios > embedding > native questions", () => {
           },
         });
 
-        cy.findByTestId("table-row").should("have.length", 1);
+        cy.findAllByRole("row").should("have.length", 1);
         cy.findByText("92");
 
         H.filterWidget().should("not.exist");
@@ -236,7 +234,7 @@ describe("scenarios > embedding > native questions", () => {
     });
 
     it("should set multiple filter values via url", () => {
-      cy.get("@questionId").then(questionId => {
+      cy.get("@questionId").then((questionId) => {
         cy.request("PUT", `/api/card/${questionId}`, {
           enable_embedding: true,
           embedding_params: {
@@ -264,7 +262,7 @@ describe("scenarios > embedding > native questions", () => {
         cy.findByDisplayValue("Organic");
 
         // Total's value should fall back to the default one (`0`) because we didn't set it explicitly
-        cy.get("legend").contains("Total").parent("fieldset").contains("0");
+        H.filterWidget({ name: "Total" }).should("contain", "0");
 
         cy.contains("Emilie Goyette");
         cy.contains("35.7");
@@ -274,14 +272,14 @@ describe("scenarios > embedding > native questions", () => {
           setFilters: { total: 80 },
         });
 
-        cy.get("legend").contains("Total").parent("fieldset").contains("80");
+        H.filterWidget({ name: "Total" }).should("contain", "80");
 
         cy.contains("35.7").should("not.exist");
       });
     });
 
     it("should lock all parameters", () => {
-      cy.get("@questionId").then(questionId => {
+      cy.get("@questionId").then((questionId) => {
         cy.request("PUT", `/api/card/${questionId}`, {
           enable_embedding: true,
           embedding_params: {
@@ -308,7 +306,7 @@ describe("scenarios > embedding > native questions", () => {
 
         H.visitEmbeddedPage(payload);
 
-        cy.findByTestId("table-row").should("have.length", 1);
+        cy.findAllByRole("row").should("have.length", 1);
         cy.findByText("66.8");
 
         H.filterWidget().should("not.exist");
@@ -326,7 +324,7 @@ describe("scenarios > embedding > native questions", () => {
         wrapId: true,
       });
 
-      cy.get("@questionId").then(questionId => {
+      cy.get("@questionId").then((questionId) => {
         cy.request("PUT", `/api/card/${questionId}`, {
           enable_embedding: true,
           embedding_params: {
@@ -338,7 +336,7 @@ describe("scenarios > embedding > native questions", () => {
     });
 
     it("locked parameters require a value to be specified in the JWT", () => {
-      cy.get("@questionId").then(questionId => {
+      cy.get("@questionId").then((questionId) => {
         const payload = {
           resource: { question: questionId },
           params: { source: null },
@@ -355,16 +353,16 @@ describe("scenarios > embedding > native questions", () => {
 
     it("locked parameters should still render results in the preview by default (metabase#47570)", () => {
       H.visitQuestion("@questionId");
-      H.openStaticEmbeddingModal({ activeTab: "parameters" });
+      H.openStaticEmbeddingModal({
+        activeTab: "parameters",
+      });
       H.visitIframe();
 
       cy.log("should show card results by default");
       cy.findByTestId("visualization-root")
         .findByText("2,500")
         .should("be.visible");
-      cy.findByTestId("visualization-root")
-        .findByText("test question")
-        .should("be.visible");
+      cy.findByRole("heading", { name: "test question" }).should("be.visible");
     });
   });
 });
@@ -393,7 +391,7 @@ describe("scenarios > embedding > native questions with default parameters", () 
   });
 
   it("card parameter defaults should apply for disabled parameters, but not for editable or locked parameters", () => {
-    cy.get("@questionId").then(questionId => {
+    cy.get("@questionId").then((questionId) => {
       const payload = {
         resource: { question: questionId },
         params: { source: [] },

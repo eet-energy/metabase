@@ -1,3 +1,5 @@
+import { Route } from "react-router";
+
 import { setupEnterprisePlugins } from "__support__/enterprise";
 import {
   setupDashboardQuestionCandidatesEndpoint,
@@ -23,7 +25,6 @@ const getProps = (
   isBookmarked: false,
   canUpload: false,
   uploadsEnabled: true,
-  isPersonalCollectionChild: false,
   onUpdateCollection: jest.fn(),
   onCreateBookmark: jest.fn(),
   saveFile: jest.fn(),
@@ -44,13 +45,18 @@ export const setup = ({
   setupDashboardQuestionCandidatesEndpoint([]);
   setupUserKeyValueEndpoints({
     key: "collection-menu",
-    namespace: "user_acknowledgement",
-    value: true,
+    namespace: "indicator-menu",
+    value: [],
   });
   setupUserKeyValueEndpoints({
     key: "move-to-dashboard",
     namespace: "user_acknowledgement",
     value: true,
+  });
+  setupUserKeyValueEndpoints({
+    key: "events-menu",
+    namespace: "user_acknowledgement",
+    value: false,
   });
 
   const props = getProps({
@@ -67,9 +73,14 @@ export const setup = ({
     setupEnterprisePlugins();
   }
 
-  renderWithProviders(<CollectionHeader {...props} />, {
-    storeInitialState: state,
-  });
+  renderWithProviders(
+    <Route path="/" component={() => <CollectionHeader {...props} />} />,
+    {
+      storeInitialState: state,
+      initialRoute: "/",
+      withRouter: true,
+    },
+  );
 
   return props;
 };

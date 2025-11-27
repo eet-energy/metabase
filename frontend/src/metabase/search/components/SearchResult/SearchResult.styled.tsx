@@ -1,5 +1,7 @@
 import isPropValid from "@emotion/is-prop-valid";
+// eslint-disable-next-line no-restricted-imports
 import { css } from "@emotion/react";
+// eslint-disable-next-line no-restricted-imports
 import styled from "@emotion/styled";
 import type {
   AnchorHTMLAttributes,
@@ -8,7 +10,7 @@ import type {
   RefObject,
 } from "react";
 
-import Markdown from "metabase/core/components/Markdown";
+import Markdown from "metabase/common/components/Markdown";
 import type { AnchorProps, BoxProps, ButtonProps } from "metabase/ui";
 import { Anchor, Box, Button, Divider, Stack } from "metabase/ui";
 

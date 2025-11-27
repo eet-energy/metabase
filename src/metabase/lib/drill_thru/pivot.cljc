@@ -41,6 +41,7 @@
   - `pivotTypes` function that return available column types for the drill - \"category\" | \"location\" | \"time\"
 
   - `pivotColumnsForType` returns the list of available columns for the drill and the selected type"
+  (:refer-clojure :exclude [select-keys empty? not-empty #?(:clj for)])
   (:require
    [metabase.lib.aggregation :as lib.aggregation]
    [metabase.lib.breakout :as lib.breakout]
@@ -52,7 +53,8 @@
    [metabase.lib.schema.metadata :as lib.schema.metadata]
    [metabase.lib.types.isa :as lib.types.isa]
    [metabase.lib.underlying :as lib.underlying]
-   [metabase.util.malli :as mu]))
+   [metabase.util.malli :as mu]
+   [metabase.util.performance :refer [select-keys empty? not-empty #?(:clj for)]]))
 
 (mu/defn- pivot-drill-pred :- [:sequential ::lib.schema.metadata/column]
   "Implementation for pivoting on various kinds of fields.
@@ -70,7 +72,7 @@
          (filter field-pred))))
 
 (def ^:private pivot-type-predicates
-  {:category (every-pred lib.types.isa/category?
+  {:category (every-pred (some-fn lib.types.isa/category? lib.types.isa/boolean?)
                          (complement lib.types.isa/address?))
    :location lib.types.isa/address?
    :time     lib.types.isa/temporal?})
@@ -80,7 +82,7 @@
     (cond
       (lib.types.isa/temporal? column) :date
       (lib.types.isa/address? column) :address
-      (lib.types.isa/category? column) :category)))
+      ((some-fn lib.types.isa/category? lib.types.isa/boolean?) column) :category)))
 
 (mu/defn- permitted-pivot-types :- [:maybe [:set ::lib.schema.drill-thru/pivot-types]]
   "This captures some complex conditions formerly encoded by `visualizations/click-actions/Mode/*` in the FE.
@@ -163,9 +165,10 @@
   (get-in drill-thru [:pivots pivot-type]))
 
 (defn- breakouts->filters [query stage-number {:keys [column value] :as _dimension}]
-  (-> query
-      (lib.breakout/remove-existing-breakouts-for-column stage-number column)
-      (lib.filter/filter stage-number (lib.filter/= column value))))
+  (let [resolved-column (lib.drill-thru.common/breakout->resolved-column query stage-number column)]
+    (-> query
+        (lib.breakout/remove-existing-breakouts-for-column stage-number column)
+        (lib.filter/filter stage-number (lib.filter/= resolved-column value)))))
 
 ;; Pivot drills are in play when clicking an aggregation cell. Pivoting is applied by:
 ;; 1. For each "dimension", ie. the specific values for all breakouts at the originally clicked cell:

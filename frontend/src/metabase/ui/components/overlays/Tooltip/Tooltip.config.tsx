@@ -20,9 +20,11 @@ export const tooltipOverrides: MantineThemeOverride["components"] = {
         focus: true,
         touch: true,
       },
+      color: "var(--mb-color-tooltip-background)",
     },
     classNames: {
       tooltip: cx(TooltipStyles.tooltip, ZIndex.Overlay),
+      arrow: TooltipStyles.arrow,
     },
   }),
 };

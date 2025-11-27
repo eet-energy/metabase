@@ -3,15 +3,64 @@
    [clojure.test :refer :all]
    [metabase.models.serialization :as serdes]
    [metabase.test :as mt]
-   [toucan2.core :as t2])
-  (:import
-   (java.time LocalDateTime)))
+   [metabase.util.json :as json]
+   [toucan2.core :as t2]))
 
 (set! *warn-on-reflection* true)
 
+(deftest ^:parallel normalize-metric-segment-definition-test
+  (testing "Legacy Segment definitions should get normalized to MBQL 5"
+    (testing "MBQL 4 fragment input"
+      (mt/with-temp [:model/Segment segment {:table_id (mt/id :venues)
+                                             :definition {:filter [:=
+                                                                   [:field-id 1]
+                                                                   [:datetime-field [:field-id 2] :month]]}}]
+        (let [loaded-segment (t2/select-one :model/Segment :id (:id segment))
+              definition (:definition loaded-segment)]
+          (testing "should convert to full MBQL 5 query"
+            (is (=? {:lib/type :mbql/query
+                     :database (mt/id)
+                     :stages [{:lib/type :mbql.stage/mbql
+                               :source-table (mt/id :venues)
+                               :filters [[:= {} [:field {} 1] [:field {:temporal-unit :month} 2]]]}]}
+                    definition))))))
+    (testing "MBQL 4 fragment with aggregation should strip aggregation"
+      (mt/with-temp [:model/Segment segment {:table_id (mt/id :venues)
+                                             :definition {:filter [:= [:field-id 1] 2]
+                                                          :aggregation [[:count]]}}]
+        (let [loaded-segment (t2/select-one :model/Segment :id (:id segment))
+              definition (:definition loaded-segment)]
+          (testing "should convert to MBQL 5 without aggregation"
+            (is (=? {:lib/type :mbql/query
+                     :database (mt/id)
+                     :stages [{:lib/type :mbql.stage/mbql
+                               :source-table (mt/id :venues)
+                               :filters [[:= {} [:field {} 1] 2]]}]}
+                    definition)))
+          (testing "should not have aggregation in the stage"
+            (is (not (contains? (first (:stages definition)) :aggregation)))))))))
+
+(deftest dont-explode-on-way-out-from-db-test
+  (testing "`segment-definition`s should avoid explosions coming out of the DB..."
+    (testing "invalid data should be set to nil"
+      ;; Direct DB insert to bypass validation
+      (mt/with-temp [:model/Segment {segment-id :id} {:table_id (mt/id :venues)
+                                                      :definition {:filter 1000}}]
+        (t2/query-one {:update :segment
+                       :set {:definition (json/encode {:filter "X"})}
+                       :where [:= :id segment-id]})
+        (is (nil? (:definition (t2/select-one :model/Segment :id segment-id)))))))
+  (testing "...but should still throw them on insert"
+    (is (thrown? Exception
+                 (t2/insert! :model/Segment {:table_id (mt/id :venues)
+                                             :name "Bad Segment"
+                                             :definition {:filter "X"}})))))
+
 (deftest update-test
   (testing "Updating"
-    (mt/with-temp [:model/Segment {:keys [id]} {:creator_id (mt/user->id :rasta)}]
+    (mt/with-temp [:model/Segment {:keys [id]} {:creator_id (mt/user->id :rasta)
+                                                :table_id (mt/id :venues)
+                                                :definition {:filter 1000}}]
       (testing "you should not be able to change the creator_id of a Segment"
         (is (thrown-with-msg?
              Exception
@@ -25,28 +74,30 @@
              (t2/update! :model/Segment id {:creator_id nil}))))
 
       (testing "calling `update!` with a value that is the same as the current value shouldn't throw an Exception"
-        (is (= 1
+        (is (= 0
                (t2/update! :model/Segment id {:creator_id (mt/user->id :rasta)})))))))
 
 (deftest identity-hash-test
   (testing "Segment hashes are composed of the segment name and table identity-hash"
-    (let [now (LocalDateTime/of 2022 9 1 12 34 56)]
-      (mt/with-temp [:model/Database db      {:name "field-db" :engine :h2}
-                     :model/Table    table   {:schema "PUBLIC" :name "widget" :db_id (:id db)}
-                     :model/Segment  segment {:name "big customers" :table_id (:id table) :created_at now}]
+    (let [now #t "2022-09-01T12:34:56Z"]
+      (mt/with-temp [:model/Database db {:name "field-db" :engine :h2}
+                     :model/Table table {:schema "PUBLIC" :name "widget" :db_id (:id db)}
+                     :model/Segment segment {:name "big customers" :table_id (:id table) :created_at now
+                                             :definition {:filter 1000}}]
         (is (= "be199b7c"
-               (serdes/raw-hash ["big customers" (serdes/identity-hash table) now])
+               (serdes/raw-hash ["big customers" (serdes/identity-hash table) (:created_at segment)])
                (serdes/identity-hash segment)))))))
 
 (deftest definition-description-missing-definition-test
   (testing "Do not hydrate definition description if definition is nil"
-    (mt/with-temp [:model/Segment segment {:name     "Segment"
-                                           :table_id (mt/id :users)}]
-      (is (=? {:definition_description nil}
-              (t2/hydrate segment :definition_description))))))
+    (mt/with-temp [:model/Segment {id :id} {:name "Segment"
+                                            :table_id (mt/id :users)}]
+      (is (nil? (-> (t2/select-one :model/Segment id)
+                    (t2/hydrate :definition_description)
+                    :definition_description))))))
 
 (deftest ^:parallel definition-description-test
-  (mt/with-temp [:model/Segment segment {:name       "Expensive BBQ Spots"
+  (mt/with-temp [:model/Segment segment {:name "Expensive BBQ Spots"
                                          :definition (:query (mt/mbql-query venues
                                                                {:filter
                                                                 [:and
@@ -64,19 +115,24 @@
         (is (= "Filtered by Expensive BBQ Spots and ID is not empty"
                (:definition_description (t2/hydrate segment-2 :definition_description))))))))
 
-(deftest definition-description-missing-source-table-test
+(deftest ^:parallel definition-description-missing-source-table-test
   (testing "Should work if `:definition` does not include `:source-table`"
-    (mt/with-temp [:model/Segment segment {:name       "Expensive BBQ Spots"
+    (mt/with-temp [:model/Segment segment {:name "Expensive BBQ Spots"
                                            :definition (mt/$ids venues
                                                          {:filter
                                                           [:= $price 4]})}]
       (is (= "Filtered by Price is equal to 4"
              (:definition_description (t2/hydrate segment :definition_description)))))))
 
-(deftest definition-description-invalid-query-test
+(deftest ^:synchronized definition-description-invalid-query-test
   (testing "Should return `nil` if query is invalid"
-    (mt/with-temp [:model/Segment segment {:name       "Expensive BBQ Spots"
-                                           :definition (:query (mt/mbql-query venues
-                                                                 {:filter
-                                                                  [:= [:field Integer/MAX_VALUE nil] 4]}))}]
-      (is (nil? (:definition_description (t2/hydrate segment :definition_description)))))))
+    (mt/with-temp [:model/Segment {id :id} {:name "Expensive BBQ Spots"
+                                            :definition (:query (mt/mbql-query venues
+                                                                  {:filter 1000}))}]
+      (t2/query-one {:update :segment
+                     :set {:definition (json/encode {:filter
+                                                     [:= [:wheat-field Integer/MAX_VALUE nil] 4]})}
+                     :where [:= :id id]})
+      (is (nil? (-> (t2/select-one :model/Segment id)
+                    (t2/hydrate :definition_description)
+                    :definition_description))))))

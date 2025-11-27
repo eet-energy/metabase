@@ -3,12 +3,14 @@ import { rem } from "@mantine/core";
 
 import { DEFAULT_METABASE_COMPONENT_THEME } from "metabase/embedding-sdk/theme";
 
+import Styles from "./Theme.module.css";
 import {
   accordionOverrides,
   actionIconOverrides,
   alertOverrides,
   anchorOverrides,
   autocompleteOverrides,
+  avatarOverrides,
   badgeOverrides,
   buttonOverrides,
   calendarOverrides,
@@ -16,21 +18,28 @@ import {
   checkboxOverrides,
   chipOverrides,
   codeOverrides,
+  comboboxOverrides,
   dateInputOverrides,
   datePickerOverrides,
+  dateTimePickerOverrides,
   dividerOverrides,
   fileInputOverrides,
   hoverCardOverrides,
   inputOverrides,
+  kbdOverrides,
   listOverrides,
   menuOverrides,
   modalOverrides,
   monthPickerOverrides,
   multiSelectOverrides,
   navLinkOverrides,
+  numberInputOverrides,
   overlayOverrides,
   paperOverrides,
+  pillOverrides,
+  pillsInputOverrides,
   popoverOverrides,
+  portalOverrides,
   progressOverrides,
   radioOverrides,
   scrollAreaOverrides,
@@ -43,6 +52,7 @@ import {
   textOverrides,
   textareaOverrides,
   timeInputOverrides,
+  timelineOverrides,
   titleOverrides,
   tooltipOverrides,
 } from "./components";
@@ -57,13 +67,23 @@ export const breakpoints = {
 };
 export type BreakpointName = keyof typeof breakpoints;
 
-export const getThemeOverrides = (): MantineThemeOverride => ({
+export const getThemeOverrides = (
+  colorScheme: "light" | "dark" = "light",
+): MantineThemeOverride => ({
+  focusClassName: Styles.focus,
   breakpoints,
-  colors: getThemeColors(),
+  colors: getThemeColors(colorScheme),
   primaryColor: "brand",
   primaryShade: 0,
+  // Store colorScheme in other property for access later
+  other: {
+    ...DEFAULT_METABASE_COMPONENT_THEME,
+    colorScheme,
+  },
   shadows: {
+    // eslint-disable-next-line no-color-literals
     sm: "0px 1px 4px 2px rgba(0, 0, 0, 0.08)",
+    // eslint-disable-next-line no-color-literals
     md: "0px 4px 20px 0px rgba(0, 0, 0, 0.05)",
   },
   spacing: {
@@ -96,18 +116,26 @@ export const getThemeOverrides = (): MantineThemeOverride => ({
   headings: {
     sizes: {
       h1: {
-        fontSize: rem(24),
-        lineHeight: rem(24),
+        fontSize: rem(32),
+        lineHeight: rem(38),
       },
       h2: {
+        fontSize: rem(24),
+        lineHeight: rem(28),
+      },
+      h3: {
         fontSize: rem(20),
         lineHeight: rem(24),
       },
-      h3: {
+      h4: {
+        fontSize: rem(17),
+        lineHeight: rem(20),
+      },
+      h5: {
         fontSize: rem(14),
         lineHeight: rem(16),
       },
-      h4: {
+      h6: {
         fontSize: rem(14),
         lineHeight: rem(16),
       },
@@ -121,27 +149,35 @@ export const getThemeOverrides = (): MantineThemeOverride => ({
     ...alertOverrides,
     ...anchorOverrides,
     ...autocompleteOverrides,
+    ...avatarOverrides,
     ...badgeOverrides,
     ...buttonOverrides,
     ...calendarOverrides,
     ...cardOverrides,
     ...checkboxOverrides,
     ...chipOverrides,
+    ...comboboxOverrides,
     ...codeOverrides,
     ...dateInputOverrides,
     ...datePickerOverrides,
+    ...dateTimePickerOverrides,
     ...dividerOverrides,
     ...fileInputOverrides,
     ...inputOverrides,
+    ...kbdOverrides,
     ...menuOverrides,
     ...modalOverrides,
     ...monthPickerOverrides,
     ...multiSelectOverrides,
     ...navLinkOverrides,
+    ...numberInputOverrides,
     ...radioOverrides,
     ...overlayOverrides,
     ...paperOverrides,
+    ...pillOverrides,
+    ...pillsInputOverrides,
     ...popoverOverrides,
+    ...portalOverrides,
     ...progressOverrides,
     ...scrollAreaOverrides,
     ...segmentedControlOverrides,
@@ -153,10 +189,10 @@ export const getThemeOverrides = (): MantineThemeOverride => ({
     ...textInputOverrides,
     ...textOverrides,
     ...timeInputOverrides,
+    ...timelineOverrides,
     ...titleOverrides,
     ...tooltipOverrides,
     ...hoverCardOverrides,
     ...listOverrides,
   },
-  other: DEFAULT_METABASE_COMPONENT_THEME,
 });

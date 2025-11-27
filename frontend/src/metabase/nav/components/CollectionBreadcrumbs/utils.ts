@@ -10,7 +10,12 @@ export const getCollectionList = ({
   baseCollectionId = null,
   collection,
 }: GetCollectionListProps) => {
-  if (baseCollectionId && collection.id === baseCollectionId) {
+  // baseCollectionId can be either a numeric or entity id
+  if (
+    baseCollectionId &&
+    (collection.id === baseCollectionId ||
+      collection.entity_id === baseCollectionId)
+  ) {
     return [];
   }
 
@@ -19,7 +24,7 @@ export const getCollectionList = ({
   const [_root, ...crumbsWithoutRoot] = ancestors;
 
   const baseIndex = baseCollectionId
-    ? ancestors.findIndex(part => part.id === baseCollectionId)
+    ? ancestors.findIndex((part) => part.id === baseCollectionId)
     : -1;
 
   if (baseIndex >= 0) {

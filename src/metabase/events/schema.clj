@@ -1,11 +1,12 @@
 (ns metabase.events.schema
   (:require
    [malli.util :as mut]
-   [metabase.models.view-log-impl :as view-log-impl]
    [metabase.util.malli :as mu]
    [metabase.util.malli.registry :as mr]
    [metabase.util.malli.schema :as ms]
    [toucan2.core :as t2]))
+
+;;; TODO -- move these into appropriate modules.
 
 (mu/defn event-schema
   "Get the Malli schema we should use for events of `topic`. By default, this looks in our registry for a schema
@@ -43,6 +44,16 @@
    [:user-id  pos-int?]
    [:object   [:fn #(t2/instance-of? :model/Collection %)]]])
 
+ ;; collection write events
+
+(mr/def ::collection
+  [:map {:closed true}
+   [:user-id pos-int?]
+   [:object [:fn #(t2/instance-of? :model/Collection %)]]])
+
+(mr/def :event/collection-create ::collection)
+(mr/def :event/collection-update ::collection)
+
 ;; dashboard events
 
 (mr/def ::dashboard
@@ -66,30 +77,6 @@
    [:user-id   [:maybe pos-int?]]
    [:object-id [:maybe pos-int?]]])
 
-;; card events
-
-(mr/def ::card
-  [:map {:closed true}
-   [:user-id  [:maybe pos-int?]]
-   [:object   [:fn #(t2/instance-of? :model/Card %)]]])
-
-(mr/def :event/card-create ::card)
-(mr/def :event/card-update ::card)
-(mr/def :event/card-delete ::card)
-
-(mr/def :event/card-read
-  [:map {:closed true}
-   ;; context is deliberately coupled to view-log's context
-   [:context view-log-impl/context]
-   [:user-id [:maybe pos-int?]]
-   [:object-id [:maybe pos-int?]]])
-
-(mr/def :event/card-query
-  [:map {:closed true}
-   [:card-id pos-int?]
-   [:user-id [:maybe pos-int?]]
-   [:context {:optional true} :any]])
-
 ;; user events
 
 (mr/def ::user
@@ -112,26 +99,6 @@
      [:invitor [:map {:closed true}
                 [:email                       ms/Email]
                 [:first_name {:optional true} [:maybe :string]]]]]]])
-
-;; metric events
-
-;; TODO -- are these for LEGACY METRICS? ARE THESE EVENT USED ANYMORE?
-
-(mr/def ::metric
-  [:map {:closed true}
-   [:user-id  pos-int?]
-   [:object   [:fn #(t2/instance-of? :model/LegacyMetric %)]]])
-
-(mr/def :event/metric-create ::metric)
-
-(mr/def ::metric-with-message
-  [:merge
-   ::metric
-   [:map {:closed true}
-    [:revision-message {:optional true} :string]]])
-
-(mr/def :event/metric-update ::metric-with-message)
-(mr/def :event/metric-delete ::metric-with-message)
 
 ;; segment events
 
@@ -157,7 +124,9 @@
   [:map {:closed true}
    [:object [:fn #(t2/instance-of? :model/Database %)]]
    [:previous-object {:optional true} [:fn #(t2/instance-of? :model/Database %)]]
-   [:user-id pos-int?]])
+   [:details {:optional true} :map]
+   [:user-id pos-int?]
+   [:details-changed? {:optional true} [:maybe :boolean]]])
 
 (mr/def :event/database-create ::database)
 (mr/def :event/database-update ::database)
@@ -202,3 +171,27 @@
   [:map {:closed true}
    [:user-id [:maybe pos-int?]]
    [:model [:or :keyword :string]]])
+
+;; Enterprise remote sync events
+
+(mr/def :event/remote-sync
+  [:map
+   [:sync-type [:enum :initial :incremental :full "import" "export"]]
+   [:collection-id [:maybe ms/NonBlankString]]
+   [:user-id [:maybe pos-int?]]
+   [:timestamp [:maybe :any]]
+   [:branch {:optional true} [:maybe :string]]
+   [:status {:optional true} [:maybe [:enum "success" "error"]]]
+   [:version {:optional true} :string]
+   [:message {:optional true} [:maybe :string]]])
+
+;; snippet events
+
+(mr/def ::snippet
+  [:map {:closed true}
+   [:user-id [:maybe pos-int?]]
+   [:object [:fn #(t2/instance-of? :model/NativeQuerySnippet %)]]])
+
+(mr/def :event/snippet-create ::snippet)
+(mr/def :event/snippet-update ::snippet)
+(mr/def :event/snippet-delete ::snippet)

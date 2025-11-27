@@ -3,9 +3,10 @@ import type { ChangeEvent } from "react";
 import { useMemo } from "react";
 import { t } from "ttag";
 
-import Select, { Option } from "metabase/core/components/Select";
+import Select, { Option } from "metabase/common/components/Select";
 import CS from "metabase/css/core/index.css";
 import { ParameterWidget as StaticParameterWidget } from "metabase/parameters/components/ParameterWidget";
+import { getParameterIconName } from "metabase/parameters/utils/ui";
 import type {
   EmbedResourceParameter,
   EmbedResourceType,
@@ -13,7 +14,6 @@ import type {
   EmbeddingParameters,
   EmbeddingParametersValues,
 } from "metabase/public/lib/types";
-import type { IconName } from "metabase/ui";
 import { Box, Divider, Icon, Stack, Text } from "metabase/ui";
 import { getValuePopulatedParameters } from "metabase-lib/v1/parameters/utils/parameter-values";
 
@@ -52,7 +52,7 @@ export const ParametersSettings = ({
   );
 
   const hasRequiredParameters = resourceParameters.some(
-    param => param.required,
+    (param) => param.required,
   );
 
   return resourceParameters.length > 0 ? (
@@ -63,9 +63,9 @@ export const ParametersSettings = ({
         <Stack gap="1rem">
           <Text>{t`Parameters are disabled by default, which also makes them hidden from end-users. Make them editable so that end-users can see and modify them. Make them locked so that they are hidden from end-users but you can set their values from your app.`}</Text>
 
-          {resourceParameters.map(parameter => (
+          {resourceParameters.map((parameter) => (
             <div key={parameter.id} className={cx(CS.flex, CS.alignCenter)}>
-              <Icon name={getIconForParameter(parameter)} className={CS.mr2} />
+              <Icon name={getParameterIconName(parameter)} className={CS.mr2} />
               <h3>
                 {parameter.name}
                 {parameter.required && (
@@ -117,7 +117,7 @@ export const ParametersSettings = ({
             <Stack gap="1rem">
               <Text>{t`Try passing some sample values to your locked parameters here. Your server will have to provide the actual values in the signed token when doing this for real.`}</Text>
 
-              {valuePopulatedLockedParameters.map(parameter => (
+              {valuePopulatedLockedParameters.map((parameter) => (
                 <StaticParameterWidget
                   key={parameter.id}
                   className={CS.m0}
@@ -148,16 +148,4 @@ export const ParametersSettings = ({
       <Divider />
     </>
   );
-};
-
-const getIconForParameter = (parameter: EmbedResourceParameter): IconName => {
-  if (parameter.type === "category") {
-    return "string";
-  }
-
-  if (parameter.type.indexOf("date/") === 0) {
-    return "calendar";
-  }
-
-  return "unknown";
 };

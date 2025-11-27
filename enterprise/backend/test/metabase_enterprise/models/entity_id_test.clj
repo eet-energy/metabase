@@ -21,8 +21,11 @@
     :model/Table
     :model/Field
     :model/FieldValues
+    :model/FieldUserSettings
     ;; Settings have human-selected unique names.
-    :model/Setting})
+    :model/Setting
+    ;; Glossary items have unique `term` key
+    :model/Glossary})
 
 (def ^:private entities-not-exported
   "Entities that are either:
@@ -30,6 +33,7 @@
   - exported as a child of something else (eg. timeline_event under timeline)
   so they don't need a generated entity_id."
   #{:model/ApiKey
+    :model/AuthIdentity
     :model/HTTPAction
     :model/ImplicitAction
     :model/QueryAction
@@ -40,19 +44,23 @@
     :model/CardBookmark
     :model/ChannelTemplate
     :model/CollectionBookmark
+    :model/ContentTranslation
     :model/DashboardBookmark
     :model/DataPermissions
+    :model/DatabaseRouter
+    :model/Dependency
+    :model/DocumentBookmark
     :model/CollectionPermissionGraphRevision
     :model/DashboardCardSeries
     :model/LoginHistory
-    :model/FieldUsage
     :model/FieldValues
-    :model/LegacyMetric
-    :model/LegacyMetricImportantField
+    :model/MetabotConversation
+    :model/MetabotMessage
     :model/ModelIndex
     :model/ModelIndexValue
     :model/ModerationReview
     :model/Notification
+    :model/NotificationCard
     :model/NotificationSubscription
     :model/NotificationHandler
     :model/NotificationRecipient
@@ -67,26 +75,38 @@
     :model/PulseChannel
     :model/PulseChannelRecipient
     :model/Query
-    :model/QueryAnalysis
     :model/QueryCache
     :model/QueryExecution
     :model/QueryField
     :model/QueryTable
     :model/RecentViews
+    :model/RemoteSyncObject
+    :model/RemoteSyncTask
     :model/Revision
+    :model/SemanticSearchTokenTracking
     :model/SearchIndexMetadata
     :model/Secret
     :model/Session
-    :model/TablePrivileges
+    :model/SupportAccessGrantLog
     :model/TaskHistory
     :model/TimelineEvent
+    ;; TODO we should remove these models from here once serialization is supported
+    :model/TransformRun
+    :model/TransformRunCancelation
+    :model/TransformJobRun
+    :model/TransformJobTransformTag
+    :model/TransformTransformTag
+    :model/PythonLibrary
+    :model/Undo
     :model/User
     :model/UserParameterValue
     :model/UserKeyValue
     :model/ViewLog
-    :model/GroupTableAccessPolicy
+    :model/Sandbox
     :model/ConnectionImpersonation
-    :model/CloudMigration})
+    :model/CloudMigration
+    :model/Comment
+    :model/CommentReaction})
 
 (deftest ^:parallel comprehensive-entity-id-test
   (let [entity-id-models (->> (v2.entity-ids/toucan-models)
@@ -95,7 +115,7 @@
     (testing "All exported models should get entity id except those with other unique property (like name)"
       (is (= (set (concat serdes.models/exported-models
                           ;; those are inline models which still have entity_id
-                          ["DashboardCard" "DashboardTab" "Dimension"]))
+                          ["DashboardCard" "DashboardTab" "Dimension" "MetabotPrompt"]))
              (set (->> (concat entity-id-models
                                entities-external-name)
                        (map name))))))

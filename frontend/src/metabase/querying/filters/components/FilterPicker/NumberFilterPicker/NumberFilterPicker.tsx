@@ -15,17 +15,21 @@ import { NumberFilterInput } from "../../NumberFilterInput";
 import { FilterOperatorPicker } from "../FilterOperatorPicker";
 import { FilterPickerFooter } from "../FilterPickerFooter";
 import { FilterPickerHeader } from "../FilterPickerHeader";
-import { WIDTH } from "../constants";
-import type { FilterPickerWidgetProps } from "../types";
+import { COMBOBOX_PROPS, WIDTH } from "../constants";
+import type { FilterChangeOpts, FilterPickerWidgetProps } from "../types";
 
 export function NumberFilterPicker({
+  autoFocus,
   query,
   stageIndex,
   column,
   filter,
   isNew,
+  withAddButton,
+  withSubmitButton,
   onChange,
   onBack,
+  readOnly,
 }: FilterPickerWidgetProps) {
   const columnInfo = useMemo(
     () => Lib.displayInfo(query, stageIndex, column),
@@ -55,13 +59,20 @@ export function NumberFilterPicker({
     setValues(getDefaultValues(newOperator, values));
   };
 
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-
+  const handleFilterChange = (opts: FilterChangeOpts) => {
     const filter = getFilterClause(operator, values);
     if (filter) {
-      onChange(filter);
+      onChange(filter, opts);
     }
+  };
+
+  const handleFormSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    handleFilterChange({ run: true });
+  };
+
+  const handleAddButtonClick = () => {
+    handleFilterChange({ run: false });
   };
 
   return (
@@ -69,11 +80,12 @@ export function NumberFilterPicker({
       component="form"
       w={WIDTH}
       data-testid="number-filter-picker"
-      onSubmit={handleSubmit}
+      onSubmit={handleFormSubmit}
     >
       <FilterPickerHeader
         columnName={columnInfo.longDisplayName}
         onBack={onBack}
+        readOnly={readOnly}
       >
         <FilterOperatorPicker
           value={operator}
@@ -83,6 +95,7 @@ export function NumberFilterPicker({
       </FilterPickerHeader>
       <div>
         <NumberValueInput
+          autoFocus={autoFocus}
           query={query}
           stageIndex={stageIndex}
           column={column}
@@ -91,13 +104,20 @@ export function NumberFilterPicker({
           hasMultipleValues={hasMultipleValues}
           onChange={setValues}
         />
-        <FilterPickerFooter isNew={isNew} canSubmit={isValid} />
+        <FilterPickerFooter
+          isNew={isNew}
+          isValid={isValid}
+          withAddButton={withAddButton}
+          withSubmitButton={withSubmitButton}
+          onAddButtonClick={handleAddButtonClick}
+        />
       </div>
     </Box>
   );
 }
 
 interface NumberValueInputProps {
+  autoFocus: boolean;
   query: Lib.Query;
   stageIndex: number;
   column: Lib.ColumnMetadata;
@@ -108,6 +128,7 @@ interface NumberValueInputProps {
 }
 
 function NumberValueInput({
+  autoFocus,
   query,
   stageIndex,
   column,
@@ -124,7 +145,8 @@ function NumberValueInput({
           stageIndex={stageIndex}
           column={column}
           values={values.filter(isNotNull)}
-          autoFocus
+          autoFocus={autoFocus}
+          comboboxProps={COMBOBOX_PROPS}
           onChange={onChange}
         />
       </Box>
@@ -137,10 +159,10 @@ function NumberValueInput({
         <NumberFilterInput
           value={values[0]}
           placeholder={t`Enter a number`}
-          autoFocus
+          autoFocus={autoFocus}
           w="100%"
           aria-label={t`Filter value`}
-          onChange={newValue => onChange([newValue])}
+          onChange={(newValue) => onChange([newValue])}
         />
       </Flex>
     );
@@ -152,14 +174,14 @@ function NumberValueInput({
         <NumberFilterInput
           value={values[0]}
           placeholder={t`Min`}
-          autoFocus
-          onChange={newValue => onChange([newValue, values[1]])}
+          autoFocus={autoFocus}
+          onChange={(newValue) => onChange([newValue, values[1]])}
         />
         <Text mx="sm">{t`and`}</Text>
         <NumberFilterInput
           value={values[1]}
           placeholder={t`Max`}
-          onChange={newValue => onChange([values[0], newValue])}
+          onChange={(newValue) => onChange([values[0], newValue])}
         />
       </Flex>
     );

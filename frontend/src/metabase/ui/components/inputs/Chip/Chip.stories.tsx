@@ -10,7 +10,7 @@ const argTypes = {
 };
 
 export default {
-  title: "Core/Chip",
+  title: "Components/Ask Before Using/Chip",
   component: Chip,
   args: {
     size: "md",
@@ -19,7 +19,7 @@ export default {
   argTypes,
 };
 
-const Template: StoryFn<ChipProps> = args => {
+const Template: StoryFn<ChipProps> = (args) => {
   return <Chip {...args} />;
 };
 

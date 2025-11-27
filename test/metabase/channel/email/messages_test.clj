@@ -2,6 +2,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer :all]
+   [metabase.api-keys.core :as api-key]
    [metabase.channel.email :as email]
    [metabase.channel.email-test :as et]
    [metabase.channel.email.messages :as messages]
@@ -44,30 +45,6 @@
       (is (-> (@et/inbox "test@test.com")
               (get-in [0 :body 0 :content])
               (str/includes? "deactivated"))))))
-
-(deftest alert-schedule-text-test
-  (testing "Alert schedules can be described as English strings, with the timezone included"
-    (tu/with-temporary-setting-values [report-timezone "America/Pacific"]
-      (is (= "Run hourly"
-             (@#'messages/alert-schedule-text {:schedule_type :hourly})))
-      (is (= "Run daily at 12 AM America/Pacific"
-             (@#'messages/alert-schedule-text {:schedule_type :daily
-                                               :schedule_hour 0})))
-      (is (= "Run daily at 5 AM America/Pacific"
-             (@#'messages/alert-schedule-text {:schedule_type :daily
-                                               :schedule_hour 5})))
-      (is (= "Run daily at 6 PM America/Pacific"
-             (@#'messages/alert-schedule-text {:schedule_type :daily
-                                               :schedule_hour 18})))
-      (is (= "Run weekly on Monday at 8 AM America/Pacific"
-             (@#'messages/alert-schedule-text {:schedule_type :weekly
-                                               :schedule_day  "mon"
-                                               :schedule_hour 8})))))
-  (testing "If report-timezone is not set, falls back to UTC"
-    (tu/with-temporary-setting-values [report-timezone nil]
-      (is (= "Run daily at 12 AM UTC"
-             (@#'messages/alert-schedule-text {:schedule_type :daily
-                                               :schedule_hour 0}))))))
 
 #_(deftest render-pulse-email-test
     (testing "Email with few rows and columns can be rendered when tracing (#21166)"
@@ -142,3 +119,14 @@
           (is (= {:numberOfSuccessfulCallsWithRetryAttempt 1}
                  (get-positive-retry-metrics test-retry)))
           (is (= 1 (count @mt/inbox))))))))
+
+(deftest all-admin-recipients
+  (mt/with-temp [:model/ApiKey _ {::api-key/unhashed-key (api-key/generate-key)
+                                  :name                  "Test API key"
+                                  :user_id               (mt/user->id :crowberto)
+                                  :creator_id            (mt/user->id :crowberto)
+                                  :updated_by_id         (mt/user->id :crowberto)}]
+    (testing "all-admin-recipients returns all admin emails"
+      (let [emails (#'messages/all-admin-recipients)]
+        (is (some #(= % "crowberto@metabase.com") emails))
+        (is (not (some #(str/starts-with? % "api-key-user") emails)))))))

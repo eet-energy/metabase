@@ -3,9 +3,9 @@
 ;; We use a custom macro called `defendpoint` for defining all endpoints. It's best illustrated with an example:
 ;;
 ;; <pre><code>
-;; (ns metabase.api.dashboard ...)
+;; (ns metabase.dashboards-rest.api ...)
 ;;
-;; (api/defendpoint GET "/"
+;; (api/defendpoint :get "/"
 ;;  "Get `Dashboards`. With filter option `f`..."
 ;;  [f]
 ;;  {f [:maybe [:enum "all" "mine" "archived"]]}
@@ -80,10 +80,12 @@
   "Dynamic variables and utility functions/macros for writing API functions."
   (:require
    [metabase.api.open-api :as open-api]
-   [metabase.events :as events]
+   [metabase.config.core :as config]
+   [metabase.events.core :as events]
    [metabase.models.interface :as mi]
    [metabase.util :as u]
    [metabase.util.i18n :as i18n :refer [deferred-tru tru]]
+   [metabase.util.log :as log]
    [metabase.util.malli :as mu]
    [metabase.util.malli.schema :as ms]
    [potemkin :as p]
@@ -123,6 +125,11 @@
   "Delay to the set of permissions granted to the current user. See documentation in [[metabase.permissions.models.permissions]] for
   more information about the Metabase permissions system."
   (atom #{}))
+
+(defn current-user-attributes
+  "Returns the attributes that can be used for DB routing, sandboxing, impersonation, etc."
+  []
+  (:attributes @*current-user*))
 
 ;;; ---------------------------------------- Precondition checking helper fns ----------------------------------------
 
@@ -229,14 +236,12 @@
 ;;; ### GENERIC RESPONSE HELPERS
 ;; These are basically the same as the `api-` versions but with RESPONSE-PAIR already bound
 
-;; #### GENERIC 400 RESPONSE HELPERS
-(def ^:private generic-400
-  [400 (deferred-tru "Invalid Request.")])
-
 (defn check-400
   "Throw a `400` if `arg` is `false` or `nil`, otherwise return as-is."
-  [arg]
-  (check arg generic-400))
+  ([arg]
+   (check-400 arg (deferred-tru "Invalid Request.")))
+  ([arg msg]
+   (check arg [400 msg])))
 
 ;; #### GENERIC 404 RESPONSE HELPERS
 (def ^:private generic-404
@@ -315,6 +320,7 @@
    (try
      (check-403 (mi/can-read? obj))
      (catch clojure.lang.ExceptionInfo e
+       (log/error e "Read permissions failure")
        (events/publish-event! :event/read-permission-failure {:user-id    *current-user-id*
                                                               :object     obj
                                                               :has-access false})
@@ -352,11 +358,11 @@
   not implement this method. Most `POST` API endpoints instead have the `can-create?` logic for a given model
   hardcoded into them -- this should be considered an antipattern and be refactored out going forward."
   {:added "0.32.0"}
-  [entity m]
+  [model entity]
   (try
-    (check-403 (mi/can-create? entity m))
+    (check-403 (mi/can-create? model entity))
     (catch clojure.lang.ExceptionInfo e
-      (events/publish-event! :event/create-permission-failure {:model entity
+      (events/publish-event! :event/create-permission-failure {:model   model
                                                                :user-id *current-user-id*})
       (throw e))))
 
@@ -416,7 +422,8 @@
    old-position  :- [:maybe ms/PositiveInt]
    new-position  :- [:maybe ms/PositiveInt]]
   (let [update-fn! (fn [plus-or-minus position-update-clause]
-                     (doseq [model '[Card Dashboard Pulse]]
+                     (doseq [model (cond-> '[Card Dashboard Pulse]
+                                     config/ee-available? (conj 'Document))]
                        (t2/update! model {:collection_id       collection-id
                                           :collection_position position-update-clause}
                                    {:collection_position [plus-or-minus :collection_position 1]})))]

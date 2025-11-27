@@ -8,7 +8,7 @@ const args: Partial<SkeletonProps> = {
   natural: false,
 };
 
-const Template: StoryFn<typeof Skeleton> = args => {
+const Template: StoryFn<typeof Skeleton> = (args) => {
   return (
     <Stack gap="sm">
       A column of 10 skeletons
@@ -20,7 +20,7 @@ const Template: StoryFn<typeof Skeleton> = args => {
 };
 
 export default {
-  title: "Core/Skeleton",
+  title: "Components/Feedback/Skeleton",
   component: Skeleton,
   args,
   render: Template,

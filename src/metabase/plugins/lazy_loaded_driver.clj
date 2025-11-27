@@ -41,9 +41,7 @@
   referring to one of the default maps in `driver.common`, a entire custom map, or a list of maps to `merge:` (e.g.
   for overriding part, but not all, of a default option)."
   [{:keys [connection-properties]}]
-  (->> (map parse-connection-property connection-properties)
-       (map u/one-or-many)
-       (apply concat)))
+  (into [] (mapcat #(u/one-or-many (parse-connection-property %))) connection-properties))
 
 (defn- make-initialize! [driver add-to-classpath! init-steps]
   (fn [_]
@@ -67,6 +65,7 @@
   "Register a basic shell of a Metabase driver using the information from its Metabase plugin"
   [{:keys                                                                                            [add-to-classpath!]
     init-steps                                                                                       :init
+    extra-info                                                                                       :extra
     contact-info                                                                                     :contact-info
     superseded-by                                                                                    :superseded-by
     {driver-name :name, :keys [abstract display-name parent], :or {abstract false}, :as driver-info} :driver}]
@@ -88,6 +87,7 @@
              driver/display-name          (when display-name (constantly display-name))
              driver/contact-info          (constantly contact-info)
              driver/connection-properties (constantly connection-props)
+             driver/extra-info            (constantly extra-info)
              driver/superseded-by         (constantly (keyword superseded-by))}]
       (when f
         (.addMethod multifn driver f)))
@@ -95,15 +95,20 @@
     (log/debug (u/format-color :magenta "Registering lazy loading driver %s..." driver))
     (driver/register! driver, :parent (set (map keyword (u/one-or-many parent))), :abstract? abstract)))
 
+(defn- parse-yaml-section [manifest section]
+  (some-> manifest
+          yaml/parse-string
+          section
+          u/one-or-many
+          first))
+
 (defn- load-connection-properties
   [driver]
-  (let [manifest (str (io/file "modules/drivers/" (name driver) "resources/metabase-plugin.yaml"))
-        properties (some->
-                    (slurp manifest)
-                    yaml/parse-string
-                    :driver
-                    (parse-connection-properties))]
-    (.addMethod ^MultiFn driver/connection-properties driver (constantly properties))))
+  (let [manifest   (slurp (str (io/file "modules/drivers/" (name driver) "resources/metabase-plugin.yaml")))
+        properties (parse-connection-properties (parse-yaml-section manifest :driver))
+        extras     (parse-yaml-section manifest :extra)]
+    (.addMethod ^MultiFn driver/connection-properties driver (constantly properties))
+    (.addMethod ^MultiFn driver/extra-info driver (constantly extras))))
 
 (comment
-  (load-connection-properties :snowflake))
+  (load-connection-properties :databricks))

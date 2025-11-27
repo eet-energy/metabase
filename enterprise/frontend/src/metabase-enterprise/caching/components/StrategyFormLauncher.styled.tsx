@@ -2,13 +2,14 @@ import { css } from "@emotion/react";
 import styled from "@emotion/styled";
 import type { HTMLAttributes, MutableRefObject } from "react";
 
-import { color } from "metabase/lib/colors";
 import { breakpointMaxSmall } from "metabase/styled-components/theme";
 import type { ButtonProps as BaseButtonProps } from "metabase/ui";
 import { Button } from "metabase/ui";
 
 type ButtonProps = BaseButtonProps & HTMLAttributes<HTMLButtonElement>;
-export const PolicyToken = styled(Button)<
+export const PolicyToken = styled((props: ButtonProps) => (
+  <Button {...props} radius={props.radius ?? "sm"} />
+))<
   { variant?: string; ref?: MutableRefObject<HTMLButtonElement> } & ButtonProps
 >`
   cursor: pointer;
@@ -31,7 +32,6 @@ export const PolicyToken = styled(Button)<
     flex: 1;
   }
 ` as unknown as typeof Button;
-PolicyToken.defaultProps = { radius: "sm" };
 
 export const StyledLauncher = styled.div<
   {
@@ -59,7 +59,7 @@ export const StyledLauncher = styled.div<
   font-weight: ${({ forRoot, inheritsRootStrategy }) =>
     forRoot || inheritsRootStrategy ? "normal" : "bold"};
   background-color: ${({ forRoot }) =>
-    forRoot ? color("bg-medium") : color("bg-white")};
+    forRoot ? "var(--mb-color-bg-medium" : "var(--mb-color-bg-white"};
   ${({ forRoot }) =>
     !forRoot &&
     css`

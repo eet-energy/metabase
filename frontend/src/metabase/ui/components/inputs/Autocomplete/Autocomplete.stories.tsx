@@ -51,10 +51,10 @@ const dataWithGroups: ComboboxItemGroup<ComboboxItemWithIcon>[] =
   }));
 
 const dataWithIcons: ComboboxItem[] = dataWithGroups
-  .map(({ items }) => items.map(item => item))
+  .map(({ items }) => items.map((item) => item))
   .flat();
 
-const dataWithLabels = dataWithIcons.map(item => ({
+const dataWithLabels = dataWithIcons.map((item) => ({
   ...item,
   icon: undefined,
 }));
@@ -125,7 +125,7 @@ const VariantTemplate = (args: AutocompleteProps) => (
 );
 
 export default {
-  title: "Inputs/Autocomplete",
+  title: "Components/Inputs/Autocomplete",
   component: Autocomplete,
   args,
   argTypes,

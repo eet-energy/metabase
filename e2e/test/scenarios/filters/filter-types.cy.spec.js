@@ -371,7 +371,7 @@ const RELATIVE_DATE_CASES = [
     offset: "Previous",
     unit: "day",
     value: 1,
-    expectedDisplayName: "Created At is yesterday",
+    expectedDisplayName: "Created At is today or yesterday",
     includeCurrent: true,
   },
   {
@@ -396,7 +396,7 @@ const RELATIVE_DATE_CASES = [
     offset: "Previous",
     unit: "month",
     value: 1,
-    expectedDisplayName: "Created At is in the previous month",
+    expectedDisplayName: "Created At is in the previous month or this month",
     includeCurrent: true,
   },
   {
@@ -411,7 +411,8 @@ const RELATIVE_DATE_CASES = [
     offset: "Previous",
     unit: "quarters",
     value: 2,
-    expectedDisplayName: "Created At is in the previous 2 quarters",
+    expectedDisplayName:
+      "Created At is in the previous 2 quarters or this quarter",
     includeCurrent: true,
   },
 
@@ -421,7 +422,7 @@ const RELATIVE_DATE_CASES = [
     offset: "Next",
     unit: "hours",
     value: 6,
-    expectedDisplayName: "Created At is in the next 6 hours",
+    expectedDisplayName: "Created At is in the next 6 hours or this hour",
     includeCurrent: true,
   },
   {
@@ -474,13 +475,13 @@ describe("scenarios > filters > filter types", () => {
           H.clauseStepPopover().findByText(columnName).click();
           H.selectFilterOperator(operator);
           H.clauseStepPopover().within(() => {
-            values.forEach(value => {
+            values.forEach((value) => {
               cy.findByLabelText("Filter value")
                 .focus()
                 .type(`${value},`, { delay: 50 })
                 .blur();
             });
-            options.forEach(option => cy.findByText(option).click());
+            options.forEach((option) => cy.findByText(option).click());
             cy.button("Add filter").click();
           });
 
@@ -509,7 +510,7 @@ describe("scenarios > filters > filter types", () => {
           H.clauseStepPopover().findByText(columnName).click();
           H.selectFilterOperator(operator);
           H.clauseStepPopover().within(() => {
-            values.forEach(value => {
+            values.forEach((value) => {
               cy.findByLabelText("Filter value")
                 .focus()
                 .type(`${value},`, { delay: 50 })
@@ -564,7 +565,7 @@ describe("scenarios > filters > filter types", () => {
 
             H.clauseStepPopover().within(() => {
               cy.findByText("Created At").click();
-              cy.findByText("Relative dates…").click();
+              cy.findByText("Relative date range…").click();
               cy.findByRole("tab", { name: offset }).click();
             });
 
@@ -604,7 +605,7 @@ describe("scenarios > filters > filter types", () => {
               cy.findByText("Exclude…").click();
               cy.findByText(label).click();
               if (options) {
-                options.forEach(option => cy.findByText(option).click());
+                options.forEach((option) => cy.findByText(option).click());
                 cy.button("Add filter").click();
               }
             });

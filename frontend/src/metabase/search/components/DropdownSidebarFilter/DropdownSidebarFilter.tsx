@@ -1,10 +1,9 @@
-/* eslint-disable react/prop-types */
 import type { MouseEvent } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { isEmpty } from "underscore";
 
-import Popover from "metabase/components/Popover";
-import useIsSmallScreen from "metabase/hooks/use-is-small-screen";
+import Popover from "metabase/common/components/Popover";
+import useIsSmallScreen from "metabase/common/hooks/use-is-small-screen";
 import { useSelector } from "metabase/lib/redux";
 import { isNotNull } from "metabase/lib/types";
 import type {
@@ -149,7 +148,7 @@ export const DropdownSidebarFilter = ({
                 <Stack mah={maxHeight}>
                   <ContentComponent
                     value={value}
-                    onChange={selected => onApplyFilter(selected)}
+                    onChange={(selected) => onApplyFilter(selected)}
                     width={popoverWidth}
                   />
                 </Stack>

@@ -52,7 +52,7 @@ const dataWithGroups: ComboboxItemGroup<ComboboxItemWithIcon>[] =
   }));
 
 const dataWithNoGroups: ComboboxItem[] = dataWithGroups
-  .map(({ items }) => items.map(item => item))
+  .map(({ items }) => items.map((item) => item))
   .flat();
 
 const args: Partial<SelectProps<string>> = {
@@ -124,7 +124,7 @@ const VariantTemplate = (args: SelectProps<string>) => (
 );
 
 export default {
-  title: "Inputs/Select",
+  title: "Components/Inputs/Select",
   component: Select,
   args,
   argTypes,

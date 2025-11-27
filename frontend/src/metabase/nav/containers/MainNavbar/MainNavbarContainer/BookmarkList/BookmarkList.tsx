@@ -11,16 +11,14 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { t } from "ttag";
 
-import CollapseSection from "metabase/components/CollapseSection";
-import { Sortable } from "metabase/core/components/Sortable";
-import Tooltip from "metabase/core/components/Tooltip";
+import CollapseSection from "metabase/common/components/CollapseSection";
+import { Sortable } from "metabase/common/components/Sortable";
 import GrabberS from "metabase/css/components/grabber.module.css";
-import CS from "metabase/css/core/index.css";
 import Bookmarks from "metabase/entities/bookmarks";
 import { connect } from "metabase/lib/redux";
 import * as Urls from "metabase/lib/urls";
 import { PLUGIN_COLLECTIONS } from "metabase/plugins";
-import { Icon } from "metabase/ui";
+import { Icon, Tooltip } from "metabase/ui";
 import type { Bookmark } from "metabase-types/api";
 
 import { SidebarHeading } from "../../MainNavbar.styled";
@@ -52,6 +50,7 @@ interface CollectionSidebarBookmarksProps {
 interface BookmarkItemProps {
   bookmark: Bookmark;
   index: number;
+  isDraggable?: boolean;
   isSorting: boolean;
   selectedItem?: SelectedItem;
   onSelect: () => void;
@@ -69,6 +68,7 @@ function isBookmarkSelected(bookmark: Bookmark, selectedItem?: SelectedItem) {
 
 const BookmarkItem = ({
   bookmark,
+  isDraggable,
   isSorting,
   selectedItem,
   onSelect,
@@ -93,11 +93,12 @@ const BookmarkItem = ({
         icon={icon}
         isSelected={isSelected}
         isDragging={isSorting}
+        isDraggable={isDraggable}
         hasDefaultIconStyle={!isIrregularCollection}
         onClick={onSelect}
         right={
           <button onClick={onRemove}>
-            <Tooltip tooltip={t`Remove bookmark`} placement="bottom">
+            <Tooltip label={t`Remove bookmark`} position="bottom">
               <Icon name={iconName} />
             </Tooltip>
           </button>
@@ -138,25 +139,23 @@ const BookmarkList = ({
     async (input: DragEndEvent) => {
       document.body.classList.remove(GrabberS.grabbing);
       setIsSorting(false);
-      const newIndex = bookmarks.findIndex(b => b.id === input.over?.id);
-      const oldIndex = bookmarks.findIndex(b => b.id === input.active.id);
+      const newIndex = bookmarks.findIndex((b) => b.id === input.over?.id);
+      const oldIndex = bookmarks.findIndex((b) => b.id === input.active.id);
       await reorderBookmarks({ newIndex, oldIndex });
     },
     [reorderBookmarks, bookmarks],
   );
 
-  const bookmarkIds = bookmarks.map(b => b.id);
-
-  const headerId = "headingForBookmarksSectionOfSidebar";
+  const bookmarkIds = bookmarks.map((b) => b.id);
 
   return (
     <CollapseSection
-      aria-labelledby={headerId}
-      header={<SidebarHeading id={headerId}>{t`Bookmarks`}</SidebarHeading>}
+      header={<SidebarHeading>{t`Bookmarks`}</SidebarHeading>}
       initialState={initialState}
       iconPosition="right"
       iconSize={8}
-      headerClass={CS.mb1}
+      role="section"
+      aria-label={t`Bookmarks`}
       onToggle={onToggle}
     >
       <DndContext
@@ -173,6 +172,7 @@ const BookmarkList = ({
             {orderedBookmarks.map((bookmark, index) => (
               <BookmarkItem
                 bookmark={bookmark}
+                isDraggable={orderedBookmarks.length > 1}
                 isSorting={isSorting}
                 key={index}
                 index={index}

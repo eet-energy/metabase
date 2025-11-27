@@ -4,7 +4,9 @@ title: End-to-end tests with Cypress
 
 # End-to-end tests with Cypress
 
-Metabase uses Cypress for “end-to-end testing”, that is, tests that are executed against the application as a whole, including the frontend, backend, and application database. These tests are essentially scripts written in JavaScript that run in the web browser: visit different URLs, click various UI elements, type text, and assert that things happen as expected (for example, an element appearing on screen, or a network request occuring).
+Metabase uses Cypress for “end-to-end testing”, that is, tests that are executed against the application as a whole, including the frontend, backend, and application database. These tests are essentially scripts written in JavaScript that run in the web browser: visit different URLs, click various UI elements, type text, and assert that things happen as expected (for example, an element appearing on screen, or a network request occurring).
+
+_Please, get familiar with the [Cypress best practices](https://docs.cypress.io/app/core-concepts/best-practices) before you proceed._
 
 ## Getting Started
 
@@ -153,10 +155,15 @@ export MB_SNOWPLOW_URL=http://localhost:9090
 
 We have a few helpers for dealing with tests involving snowplow
 
-1. You can use `describeWithSnowplow` (or `describeWithSnowplowEE` for EE edition) method to define tests that only run when a Snowplow instance is running
-2. Use `resetSnowplow()` test helper before each test to clear the queue of processed events.
-3. Use `expectGoodSnowPlowEvent({ ...payload})` to assert on the content of a snowplow event. Use `expectGoodSnowplowEvents(count)` to assert that events have been sent and processed correctly. Prefer the more precise assertion on the actual payload to a mere count of events.
-4. Use `expectNoBadSnowplowEvents()` after each test to assert that no invalid events have been sent.
+1. Use `resetSnowplow()` test helper before each test to clear the queue of processed events.
+2. Use `expectSnowplowEvent({ ...payload }, count=n)` to assert that exactly `count` snowplow events match (partially)
+   the payload provided (count defaults to 1)
+3. Use `expectUnstructuredSnowplowEvent` to assert that exactly `count` snowplow events are unstructured events that
+   partial-match the payload provided. This is simply a convenience function for comparing
+   `event.unstruct_event.data.data` rather than the entire `event`. Most of our events are unstructured events, so this is handy.
+4. Use `assertNoUnstructuredSnowplowEvent({ ...eventData })` is the inverse of `expectUnstructuredSnowplowEvent`, and asserts that
+   _no_ unstructured events match the payload.
+5. Use `expectNoBadSnowplowEvents()` after each test to assert that no invalid events have been sent.
 
 ### Running tests that require SMTP server
 
@@ -165,6 +172,10 @@ Some of our tests depend on the email being set up, and require a local SMTP ser
 ```sh
 docker run -d -p 1080:1080 -p 1025:1025 maildev/maildev:latest
 ```
+
+### Running tests that require translation dictionaries
+
+Some of the tests are checking content translation functionality. These tests require to run `./bin/i18n/build-translation-resources` command before running the tests to precompile JSON files with translations.
 
 ### Cypress comes with `Lodash` for free
 
@@ -181,11 +192,7 @@ Cypress._.times(N, () => {
 
 ### Embedding SDK tests
 
-Tests located in `e2e/test/scenarios/embedding-sdk` are used to run automated checks for the Embedding SDK.
-
-Embedding SDK is a library, and not an application. We use Storybook to host public components, and we run tests against it.
-
-In order to run stories used for tests locally, please check [storybook setup docs](https://github.com/metabase/metabase/blob/master/enterprise/frontend/src/embedding-sdk/README.md#storybook)
+See [sdk docs about e2e](https://github.com/metabase/metabase/blob/master/enterprise/frontend/src/embedding-sdk-package/dev.md)
 
 ## DB Snapshots
 
@@ -211,15 +218,17 @@ Prior to running Cypress against Metabase® Enterprise Edition™, set `MB_EDITI
 
 **Enterprise instance will start without a premium token!**
 
-If you want to test premium features (feature flags), valid tokens need to be available to all Cypress tests. We achieve this by prefixing environment variables with `CYPRESS_`.
-You should provide two tokens that correspond to the `EE/PRO` self-hosted (all features enabled) and `STARTER` Cloud (no features enabled) Metabase plans. For more information, please see [Metabase pricing page](https://www.metabase.com/pricing/). (note: only a few tests require the no features token)
+If you want to test premium features (feature flags), valid tokens need to be available to all Cypress tests.
+You should provide 4 tokens:
 
-- `CYPRESS_ALL_FEATURES_TOKEN`
-- `CYPRESS_NO_FEATURES_TOKEN`
+- MB_ALL_FEATURES_TOKEN: all feature enabled, including new feature not released yet to customers
+- MB_STARTER_CLOUD_TOKEN: only 'hosting' feature enabled to simulate the starter plan on cloud
+- MB_PRO_CLOUD_TOKEN: PRO features enabled + 'hosting' to simulate the pro plan on cloud
+- MB_PRO_SELF_HOSTED_TOKEN: PRO features but no 'hosting' to simulate the pro self-hosted plan
 
-```
-MB_EDITION=ee ENTERPRISE_TOKEN=xxxxxx yarn test-cypress
-```
+You can configure these via ENVs or via the `cypress.env.json` file (see `cypress.env.json.example` for an example).
+
+For more information, please see [Metabase pricing page](https://www.metabase.com/pricing/).
 
 If you navigate to the `/admin/settings/license` page, the license input field should display the active token. Be careful when sharing screenshots!
 

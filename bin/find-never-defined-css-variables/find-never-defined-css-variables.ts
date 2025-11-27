@@ -4,6 +4,8 @@ import { readFileSync } from "fs";
 
 import { glob } from "glob";
 
+import { colorConfig } from "../../frontend/src/metabase/lib/colors/colors";
+
 /**
  * This script finds css variables that are used but *never* defined in our codebase.
  * Its goal isn't to find usages of variables in contexts where that variable is not defined,
@@ -34,6 +36,7 @@ const knownIssues = [
   "--multiselect-pill-font-size",
   "--select-item-font-size",
   "--select-item-line-height",
+  "--button-bg", // Mantine var defined for buttons and used in Button.module.css
 ];
 
 interface UsageMap {
@@ -100,6 +103,10 @@ const main = () => {
   for (const definition of mantineDefinitions) {
     allDefinitions.add(definition);
   }
+
+  Object.keys(colorConfig).forEach((key) => {
+    allDefinitions.add(`--mb-color-${key}`);
+  });
 
   // Find all variable definitions
   files.forEach(file => {

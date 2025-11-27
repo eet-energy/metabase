@@ -1,7 +1,7 @@
 import { c, msgid } from "ttag";
 
+import { QueryColumnInfoIcon } from "metabase/common/components/MetadataInfo/ColumnInfoIcon";
 import { SidesheetCard } from "metabase/common/components/Sidesheet";
-import { QueryColumnInfoIcon } from "metabase/components/MetadataInfo/ColumnInfoIcon";
 import { Box, Group, Stack } from "metabase/ui";
 import * as Lib from "metabase-lib";
 import type Question from "metabase-lib/v1/Question";
@@ -24,7 +24,7 @@ export const SidesheetCardWithFields = ({
   return (
     <SidesheetCard title={<Box pb="sm">{title}</Box>}>
       <Stack gap="md">
-        {columns.map(columnMetadata => {
+        {columns.map((columnMetadata) => {
           const columnDisplayInfo = Lib.displayInfo(query, -1, columnMetadata);
 
           return (

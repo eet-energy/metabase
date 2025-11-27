@@ -34,6 +34,9 @@
     [:enable_embedding true false]
     (deferred-tru "disabled embedding")
 
+    [:embedding_type _ _]
+    (deferred-tru "changed the embedding type")
+
     [:parameters _ _]
     (deferred-tru "changed the filters")
 
@@ -123,10 +126,10 @@
 (defn ^:private model-str->i18n-str
   [model-str]
   (case model-str
-    "Dashboard"    (deferred-tru "Dashboard")
-    "Card"         (deferred-tru "Card")
-    "Segment"      (deferred-tru "Segment")
-    "LegacyMetric" (deferred-tru "Metric")))
+    "Dashboard" (deferred-tru "Dashboard")
+    "Card"      (deferred-tru "Card")
+    "Segment" (deferred-tru "Segment")
+    "Document" (deferred-tru "Document")))
 
 (defn diff-strings*
   "Create a seq of string describing how `o1` is different from `o2`.

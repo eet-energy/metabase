@@ -4,13 +4,12 @@
    [clojure.string :as str]
    [clojure.test :refer :all]
    [java-time.api :as t]
-   [metabase.api.card-test :as api.card-test]
+   [metabase.api.response :as api.response]
    [metabase.channel.api.channel-test :as api.channel-test]
    [metabase.channel.impl.http-test :as channel.http-test]
    [metabase.channel.render.style :as style]
+   [metabase.channel.settings :as channel.settings]
    [metabase.driver :as driver]
-   [metabase.http-client :as client]
-   [metabase.integrations.slack :as slack]
    [metabase.notification.test-util :as notification.tu]
    [metabase.permissions.models.permissions :as perms]
    [metabase.permissions.models.permissions-group :as perms-group]
@@ -19,9 +18,10 @@
    [metabase.pulse.models.pulse-channel :as pulse-channel]
    [metabase.pulse.models.pulse-test :as pulse-test]
    [metabase.pulse.test-util :as pulse.test-util]
-   [metabase.request.core :as request]
+   [metabase.queries.api.card-test :as api.card-test]
    [metabase.test :as mt]
    [metabase.test.data.interface :as tx]
+   [metabase.test.http-client :as client]
    [metabase.test.mock.util :refer [pulse-channel-defaults]]
    [metabase.util :as u]
    [toucan2.core :as t2]))
@@ -33,7 +33,7 @@
 (defn- user-details [user]
   (select-keys
    user
-   [:email :first_name :last_login :is_qbnewb :is_superuser :id :last_name :date_joined :common_name :locale]))
+   [:email :first_name :last_login :is_qbnewb :is_superuser :id :last_name :date_joined :common_name :locale :tenant_id]))
 
 (defn- pulse-card-details [card]
   (-> (select-keys card [:id :collection_id :name :description :display])
@@ -97,8 +97,8 @@
 ;; authentication test on every single individual endpoint
 
 (deftest authentication-test
-  (is (= (:body request/response-unauthentic) (client/client :get 401 "pulse")))
-  (is (= (:body request/response-unauthentic) (client/client :put 401 "pulse/13"))))
+  (is (= (:body api.response/response-unauthentic) (client/client :get 401 "pulse")))
+  (is (= (:body api.response/response-unauthentic) (client/client :put 401 "pulse/13"))))
 
 ;;; +----------------------------------------------------------------------------------------------------------------+
 ;;; |                                                POST /api/pulse                                                 |
@@ -126,7 +126,8 @@
 
            {:name  "abc"
             :cards ["abc"]}
-           default-post-card-ref-validation-error
+           {:errors {:cards "value must be a map with the keys `include_csv`, `include_xls`, and `dashboard_card_id`.",
+                     :channels "one or more map"}}
 
            {:name  "abc"
             :cards [{:id 100, :include_csv false, :include_xls false, :dashboard_card_id nil}
@@ -172,6 +173,19 @@
    :schedule_hour 12
    :schedule_day  nil
    :recipients    []})
+
+(def pulse-channel-email-default
+  {:enabled        true
+   :channel_type   "email"
+   :channel_id     nil
+   :schedule_type  "hourly"})
+
+(def pulse-channel-slack-test
+  {:enabled        true
+   :channel_type   "slack"
+   :channel_id     nil
+   :schedule_type  "hourly"
+   :details        {:channels "#general"}})
 
 (deftest create-test
   (testing "POST /api/pulse"
@@ -373,6 +387,59 @@
                   (is (= nil
                          (t2/select-one [:model/Pulse :collection_id :collection_position] :name pulse-name))))))))))))
 
+(deftest validate-email-domains-test
+  (mt/when-ee-evailable
+   (mt/with-model-cleanup [:model/Pulse]
+     (mt/with-premium-features #{:email-allow-list}
+       (mt/with-temporary-setting-values [subscription-allowed-domains "example.com"]
+         (mt/with-temp [:model/Dashboard {dashboard-id :id} {:name "Test Dashboard"}
+                        :model/Card      {card-id :id} {}]
+           (let [pulse {:name          "Test Pulse"
+                        :dashboard_id  dashboard-id
+                        :cards         [{:id                card-id
+                                         :include_csv       false
+                                         :include_xls       false
+                                         :dashboard_card_id nil}]
+                        :channels      [{:channel_type  "email"
+                                         :schedule_type "daily"
+                                         :schedule_hour 12
+                                         :recipients    []
+                                         :enabled       true}]}
+                 failed-recipients [{:email "ngoc@metabase.com"}
+                                    {:email "ngoc@metaba.be"}]
+                 success-recipients [{:email "ngoc@example.com"}]]
+             (testing "on creation"
+               (testing "fail if recipients does not match allowed domains"
+                 (is (= "The following email addresses are not allowed: ngoc@metabase.com, ngoc@metaba.be"
+                        (mt/user-http-request :crowberto :post 403 "pulse"
+                                              (assoc-in pulse [:channels 0 :recipients] failed-recipients)))))
+
+               (testing "success if recipients matches allowed domains"
+                 (mt/user-http-request :crowberto :post 200 "pulse"
+                                       (assoc-in pulse [:channels 0 :recipients] success-recipients))))
+
+             (testing "on update"
+               (mt/with-temp [:model/Pulse {pulse-id :id} {:name          "Test Pulse"
+                                                           :dashboard_id  dashboard-id}]
+                 (testing "fail if recipients does not match allowed domains"
+                   (is (= "The following email addresses are not allowed: ngoc@metabase.com, ngoc@metaba.be"
+                          (mt/user-http-request :crowberto :put 403 (format "pulse/%d" pulse-id)
+                                                (assoc-in pulse [:channels 0 :recipients] failed-recipients)))))
+
+                 (testing "success if recipients matches allowed domains"
+                   (mt/user-http-request :crowberto :put 200 (format "pulse/%d" pulse-id)
+                                         (assoc-in pulse [:channels 0 :recipients] success-recipients)))))
+
+             (testing "on test send"
+               (testing "fail if recipients does not match allowed domains"
+                 (is (= "The following email addresses are not allowed: ngoc@metabase.com, ngoc@metaba.be"
+                        (mt/user-http-request :crowberto :post 403 "pulse/test"
+                                              (assoc-in pulse [:channels 0 :recipients] failed-recipients)))))
+
+               (testing "success if recipients matches allowed domains"
+                 (mt/user-http-request :crowberto :post 200 "pulse/test"
+                                       (assoc-in pulse [:channels 0 :recipients] success-recipients)))))))))))
+
 ;;; +----------------------------------------------------------------------------------------------------------------+
 ;;; |                                               PUT /api/pulse/:id                                               |
 ;;; +----------------------------------------------------------------------------------------------------------------+
@@ -398,7 +465,7 @@
              default-put-card-ref-validation-error
 
              {:cards ["abc"]}
-             default-put-card-ref-validation-error
+             {:errors {:cards "value must be a map with the keys `include_csv`, `include_xls`, and `dashboard_card_id`."}}
 
              {:channels 123}
              {:errors {:channels "nullable one or more map"}}
@@ -523,7 +590,7 @@
           ;; grant Permissions for only the *old* collection
           (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection)
           ;; now make an API call to move collections. Should fail
-          (is (=? {:message "You do not have curate permissions for this Collection."}
+          (is (=? "You don't have permissions to do that."
                   (mt/user-http-request :rasta :put 403 (str "pulse/" (u/the-id pulse)) {:collection_id (u/the-id new-collection)}))))))))
 
 (deftest update-collection-position-test
@@ -564,8 +631,8 @@
       (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection)
       (mt/user-http-request :rasta :put 200 (str "pulse/" (u/the-id pulse))
                             {:archived true})
-      (is (= true
-             (t2/select-one-fn :archived :model/Pulse :id (u/the-id pulse)))))))
+      (is (true?
+           (t2/select-one-fn :archived :model/Pulse :id (u/the-id pulse)))))))
 
 (deftest unarchive-test
   (testing "Can we unarchive a Pulse?"
@@ -592,12 +659,6 @@
         (is (t2/exists? :model/PulseChannel :id (u/the-id pc)))
         (is (t2/exists? :model/PulseChannelRecipient :id (u/the-id pcr)))))))
 
-(def pulse-channel-email-default
-  {:enabled        true
-   :channel_type   "email"
-   :channel_id     nil
-   :schedule_type  "hourly"})
-
 (deftest update-channels-no-op-test
   (testing "PUT /api/pulse/:id"
     (testing "If we PUT a Pulse with the same Channels, it should be a no-op"
@@ -618,13 +679,6 @@
           (is (=? [new-channel]
                   (:channels (mt/user-http-request :rasta :put 200 (str "pulse/" pulse-id)
                                                    {:channels [new-channel]})))))))))
-
-(def pulse-channel-slack-test
-  {:enabled        true
-   :channel_type   "slack"
-   :channel_id     nil
-   :schedule_type  "hourly"
-   :details        {:channels "#general"}})
 
 (deftest update-channels-add-new-channel-test
   (testing "PUT /api/pulse/:id"
@@ -788,7 +842,7 @@
       (testing (str "\n" message)
         (mt/with-temp [:model/Collection collection-1 {}
                        :model/Collection collection-2 {}
-                       :model/Card       card-1 {}]
+                       :model/Card       card-1  {}]
           (api.card-test/with-ordered-items collection-1 [:model/Pulse a
                                                           :model/Pulse b
                                                           :model/Pulse c
@@ -991,47 +1045,87 @@
                         :recipient-type nil}
                        (mt/summarize-multipart-single-email (-> channel-messages :channel/email first) #"Daily Sad Toucans")))))))))))
 
+(deftest send-test-pulse-to-non-user-test
+  (testing "sending test email to non user won't include unsubscribe link (#43391)"
+    (mt/with-non-admin-groups-no-root-collection-perms
+      (mt/with-fake-inbox
+        (mt/dataset sad-toucan-incidents
+          (mt/with-temp [:model/Collection collection {}
+                         :model/Dashboard {dashboard-id :id} {:name       "Unsaved Subscription Test"
+                                                              :parameters [{:name    "X"
+                                                                            :slug    "x"
+                                                                            :id      "__X__"
+                                                                            :type    "category"
+                                                                            :default 3}]}
+                         :model/Card       card  {:dataset_query (mt/mbql-query incidents {:aggregation [[:count]]})}]
+            (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection)
+            (api.card-test/with-cards-in-readable-collection! [card]
+              (let [channel-messages (pulse.test-util/with-captured-channel-send-messages!
+                                       (is (= {:ok true}
+                                              (mt/user-http-request :rasta :post 200 "pulse/test"
+                                                                    {:name          (mt/random-name)
+                                                                     :dashboard_id  dashboard-id
+                                                                     :cards         [{:id                (:id card)
+                                                                                      :include_csv       false
+                                                                                      :include_xls       false
+                                                                                      :dashboard_card_id nil}]
+                                                                     :channels      [{:enabled       true
+                                                                                      :channel_type  "email"
+                                                                                      :schedule_type "daily"
+                                                                                      :schedule_hour 12
+                                                                                      :schedule_day  nil
+                                                                                      :recipients    [{:email "nonuser@metabase.com"}]}]
+                                                                     :skip_if_empty false}))))]
+                (is (= {:message [{"Unsaved Subscription Test" true, "Unsubscribe" false}
+                                  pulse.test-util/png-attachment]
+                        :message-type :attachments,
+                        :recipients #{"nonuser@metabase.com"}
+                        :subject "Unsaved Subscription Test"
+                        :recipient-type nil}
+                       (mt/summarize-multipart-single-email (-> channel-messages :channel/email first) #"Unsaved Subscription Test" #"Unsubscribe")))))))))))
+
 (deftest send-test-alert-with-http-channel-test
   (testing "POST /api/pulse/test send test alert to a http channel"
     (notification.tu/with-send-notification-sync
-      (let [requests (atom [])
-            endpoint (channel.http-test/make-route
-                      :post "/test"
-                      (fn [req]
-                        (swap! requests conj req)
-                        {:status 200
-                         :body   "ok"}))]
-        (channel.http-test/with-server [url [endpoint]]
-          (mt/with-temp
-            [:model/Card    card    {:dataset_query (mt/mbql-query orders {:aggregation [[:count]]})}
-             :model/Channel channel {:type    :channel/http
-                                     :details {:url         (str url "/test")
-                                               :auth-method :none}}]
-            (mt/user-http-request :rasta :post 200 "pulse/test"
-                                  {:name            (mt/random-name)
-                                   :cards           [{:id                (:id card)
-                                                      :include_csv       false
-                                                      :include_xls       false
-                                                      :dashboard_card_id nil}]
-                                   :channels        [{:enabled       true
-                                                      :channel_type  "http"
-                                                      :channel_id    (:id channel)
-                                                      :schedule_type "daily"
-                                                      :schedule_hour 12
-                                                      :schedule_day  nil
-                                                      :recipients    []}]
-                                   :alert_condition "rows"})
-            (is (=? {:body {:alert_creator_id   (mt/user->id :rasta)
-                            :alert_creator_name "Rasta Toucan"
-                            :alert_id           nil
-                            :data               {:question_id   (:id card)
-                                                 :question_name (mt/malli=? string?)
-                                                 :question_url  (mt/malli=? string?)
-                                                 :raw_data      {:cols ["count"], :rows [[18760]]},
-                                                 :type          "question"
-                                                 :visualization (mt/malli=? [:fn #(str/starts-with? % "data:image/png;base64,")])}
-                            :type               "alert"}}
-                    (first @requests)))))))))
+      (mt/with-temporary-setting-values [http-channel-host-strategy :allow-all]
+        (let [requests (atom [])
+              endpoint (channel.http-test/make-route
+                        :post "/test"
+                        (fn [req]
+                          (swap! requests conj req)
+                          {:status 200
+                           :body   "ok"}))]
+          (channel.http-test/with-server [url [endpoint]]
+            (mt/with-temp
+              [:model/Card    card    {:dataset_query (mt/mbql-query orders {:aggregation [[:count]]})}
+               :model/Channel channel {:type    :channel/http
+                                       :details {:url         (str url "/test")
+                                                 :auth-method :none}}]
+              (mt/user-http-request :rasta :post 200 "pulse/test"
+                                    {:name            (mt/random-name)
+                                     :cards           [{:id                (:id card)
+                                                        :include_csv       false
+                                                        :include_xls       false
+                                                        :dashboard_card_id nil}]
+                                     :channels        [{:enabled       true
+                                                        :channel_type  "http"
+                                                        :channel_id    (:id channel)
+                                                        :schedule_type "daily"
+                                                        :schedule_hour 12
+                                                        :schedule_day  nil
+                                                        :recipients    []}]
+                                     :alert_condition "rows"})
+              (is (=? {:body {:alert_creator_id   (mt/user->id :rasta)
+                              :alert_creator_name "Rasta Toucan"
+                              :alert_id           nil
+                              :data               {:question_id   (:id card)
+                                                   :question_name (mt/malli=? string?)
+                                                   :question_url  (mt/malli=? string?)
+                                                   :raw_data      {:cols ["count"], :rows [[18760]]},
+                                                   :type          "question"
+                                                   :visualization (mt/malli=? [:fn #(str/starts-with? % "data:image/png;base64,")])}
+                              :type               "alert"}}
+                      (first @requests))))))))))
 
 (deftest send-test-pulse-validate-emails-test
   (testing (str "POST /api/pulse/test should call " `pulse-channel/validate-email-domains)
@@ -1147,7 +1241,7 @@
 (deftest form-input-test
   (testing "GET /api/pulse/form_input"
     (mt/with-temporary-setting-values
-      [slack/slack-app-token "test-token"]
+      [channel.settings/slack-app-token "test-token"]
       (mt/with-temp [:model/Channel _ {:type :channel/http :details {:url "https://metabasetest.com" :auth-method "none"}}]
         (is (= {:channels {:email {:allows_recipients true
                                    :configured        false
@@ -1175,12 +1269,12 @@
 (deftest form-input-slack-test
   (testing "GET /api/pulse/form_input"
     (testing "Check that Slack channels come back when configured"
-      (mt/with-temporary-setting-values [slack/slack-channels-and-usernames-last-updated
+      (mt/with-temporary-setting-values [channel.settings/slack-channels-and-usernames-last-updated
                                          (t/zoned-date-time)
 
-                                         slack/slack-app-token "test-token"
+                                         channel.settings/slack-app-token "test-token"
 
-                                         slack/slack-cached-channels-and-usernames
+                                         channel.settings/slack-cached-channels-and-usernames
                                          {:channels [{:type "channel"
                                                       :name "foo"
                                                       :display-name "#foo"
@@ -1211,14 +1305,24 @@
   (testing "GET /api/pulse/preview_card/:id"
     (mt/with-temp [:model/Collection _ {}
                    :model/Card       card {:dataset_query (mt/mbql-query checkins {:limit 5})}]
-      (letfn [(preview [expected-status-code]
-                (client/client-full-response (mt/user->credentials :rasta)
-                                             :get expected-status-code (format "pulse/preview_card_png/%d" (u/the-id card))))]
+      (letfn [(preview [expected-status-code & [width]]
+                (let [url (str "pulse/preview_card_png/" (u/the-id card)
+                               (when width (str "?width=" width)))]
+                  (client/client-full-response (mt/user->credentials :rasta)
+                                               :get expected-status-code url)))]
         (testing "Should be able to preview a Pulse"
           (let [{{:strs [Content-Type]} :headers, :keys [body]} (preview 200)]
             (is (= "image/png"
                    Content-Type))
             (is (some? body))))
+
+        (testing "Should respect the width query parameter"
+          (let [width 600
+                resp1 (preview 200)
+                resp2 (preview 200 width)]
+            (is (= "image/png" (get-in resp2 [:headers "Content-Type"])))
+            (is (not= (:body resp1) (:body resp2))) ;; crude check: different width should yield different PNG bytes
+            (is (some? (:body resp2)))))
 
         (testing "If rendering a Pulse fails (e.g. because font registration failed) the endpoint should return the error message"
           (with-redefs [style/register-fonts-if-needed! (fn []

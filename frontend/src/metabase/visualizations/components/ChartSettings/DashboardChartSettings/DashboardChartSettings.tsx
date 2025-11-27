@@ -1,19 +1,19 @@
 import { useCallback, useMemo, useState } from "react";
 import _ from "underscore";
 
+import { useDashboardContext } from "metabase/dashboard/context";
+import { Divider, Flex } from "metabase/ui";
 import { getClickBehaviorSettings } from "metabase/visualizations/lib/settings";
 import { getSettingsWidgetsForSeries } from "metabase/visualizations/lib/settings/visualization";
 import type { VisualizationSettings } from "metabase-types/api";
 
 import { BaseChartSettings } from "../BaseChartSettings";
-import { ChartSettingsRoot } from "../ChartSettings.styled";
 import { ChartSettingsVisualization } from "../ChartSettingsVisualization";
 import { useChartSettingsState } from "../hooks";
 
 import type { DashboardChartSettingsProps } from "./types";
 
 export const DashboardChartSettings = ({
-  dashboard,
   dashcard,
   onChange,
   series,
@@ -21,6 +21,8 @@ export const DashboardChartSettings = ({
   widgets: propWidgets,
   settings,
 }: DashboardChartSettingsProps) => {
+  const { dashboard } = useDashboardContext();
+
   const [tempSettings, setTempSettings] = useState<
     VisualizationSettings | undefined
   >(settings);
@@ -70,23 +72,28 @@ export const DashboardChartSettings = ({
   );
 
   return (
-    <ChartSettingsRoot>
+    <Flex justify="unset" align="unset" wrap="nowrap" h="100%">
       <BaseChartSettings
+        flex="1 0 0"
         series={series}
         onChange={setTempSettings}
         chartSettings={chartSettings}
         widgets={widgets}
         transformedSeries={transformedSeries}
       />
-      <ChartSettingsVisualization
-        rawSeries={chartSettingsRawSeries}
-        dashboard={dashboard}
-        dashcard={dashcard}
-        onUpdateVisualizationSettings={handleChangeSettings}
-        onDone={handleDone}
-        onCancel={() => onClose?.()}
-        onReset={onResetToDefault}
-      />
-    </ChartSettingsRoot>
+      <Divider orientation="vertical"></Divider>
+      {dashboard && (
+        <ChartSettingsVisualization
+          flex="2 0 0"
+          rawSeries={chartSettingsRawSeries}
+          dashboard={dashboard}
+          dashcard={dashcard}
+          onUpdateVisualizationSettings={handleChangeSettings}
+          onDone={handleDone}
+          onCancel={() => onClose?.()}
+          onReset={onResetToDefault}
+        />
+      )}
+    </Flex>
   );
 };

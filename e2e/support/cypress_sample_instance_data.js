@@ -73,6 +73,11 @@ export const NO_COLLECTION_PERSONAL_COLLECTION_ID = _.findWhere(
   { name: "No Collection Tableton's Personal Collection" },
 ).id;
 
+export const NO_SQL_PERSONAL_COLLECTION_ID = _.findWhere(
+  SAMPLE_INSTANCE_DATA.collections,
+  { name: "No SQL Tableton's Personal Collection" },
+).id;
+
 /**
  * @type number
  */
@@ -93,6 +98,11 @@ export const SECOND_COLLECTION_ID = _.findWhere(
   SAMPLE_INSTANCE_DATA.collections,
   { name: "Second collection" },
 ).id;
+
+export const SECOND_COLLECTION_ENTITY_ID = _.findWhere(
+  SAMPLE_INSTANCE_DATA.collections,
+  { name: "Second collection" },
+).entity_id;
 
 export const THIRD_COLLECTION_ID = _.findWhere(
   SAMPLE_INSTANCE_DATA.collections,

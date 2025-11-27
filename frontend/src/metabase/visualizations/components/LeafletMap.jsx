@@ -28,6 +28,13 @@ export default class LeafletMap extends Component {
         minZoom: 2,
         drawControlTooltips: false,
         zoomSnap: false,
+        // Set max bounds for latitude only, allowing longitude to wrap
+        maxBounds: [
+          [-90, -Infinity], // Southwest corner (limit south, no limit west)
+          [90, Infinity], // Northeast corner (limit north, no limit east)
+        ],
+        maxBoundsViscosity: 1.0, // Completely prevent panning outside latitude bounds
+        worldCopyJump: true, // Enable smooth horizontal wrapping
       }));
 
       const drawnItems = new L.FeatureGroup();
@@ -77,7 +84,14 @@ export default class LeafletMap extends Component {
   }
 
   componentDidUpdate(prevProps) {
-    const { bounds, settings } = this.props;
+    const { bounds, settings, zoomControl } = this.props;
+
+    if (zoomControl === false) {
+      this.map.removeControl(this.map.zoomControl);
+    } else {
+      this.map.addControl(this.map.zoomControl);
+    }
+
     if (
       !prevProps ||
       prevProps.points !== this.props.points ||
@@ -145,7 +159,7 @@ export default class LeafletMap extends Component {
     this._filter && this._filter.disable();
     this.props.onFiltering(false);
   }
-  onFilter = e => {
+  onFilter = (e) => {
     const bounds = e.layer.getBounds();
 
     const {
@@ -187,8 +201,8 @@ export default class LeafletMap extends Component {
       const updatedQuery = Lib.updateLatLonFilter(
         query,
         stageIndex,
-        latitudeColumn,
-        longitudeColumn,
+        Lib.fromLegacyColumn(query, stageIndex, latitudeColumn),
+        Lib.fromLegacyColumn(query, stageIndex, longitudeColumn),
         question.id(),
         filterBounds,
       );
@@ -218,11 +232,11 @@ export default class LeafletMap extends Component {
     return {
       latitudeIndex: _.findIndex(
         cols,
-        col => col.name === settings["map.latitude_column"],
+        (col) => col.name === settings["map.latitude_column"],
       ),
       longitudeIndex: _.findIndex(
         cols,
-        col => col.name === settings["map.longitude_column"],
+        (col) => col.name === settings["map.longitude_column"],
       ),
     };
   }

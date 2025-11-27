@@ -61,7 +61,7 @@ const DefaultTemplate = (args: MenuProps) => (
         <Button variant="filled">Toggle menu</Button>
       </Menu.Target>
       <Menu.Dropdown>
-        <Menu.Item>Question</Menu.Item>
+        <Menu.Item id="menu-item-1">Question</Menu.Item>
         <Menu.Item>SQL query</Menu.Item>
         <Menu.Item>Dashboard</Menu.Item>
         <Menu.Item>Collection</Menu.Item>
@@ -137,7 +137,7 @@ const LabelsAndDividersTemplate = (args: MenuProps) => (
 );
 
 export default {
-  title: "Overlays/Menu",
+  title: "Components/Overlays/Menu",
   component: Menu,
   args,
   argTypes,
@@ -159,4 +159,18 @@ export const Icons = {
 export const LabelsAndDividers = {
   render: LabelsAndDividersTemplate,
   name: "Labels and dividers",
+};
+
+export const HoverStates = {
+  render: DefaultTemplate,
+  name: "Hover states",
+  args: {
+    opened: true,
+  },
+  parameters: {
+    pseudo: {
+      hover: ["#menu-item-1"],
+      rootSelector: "body",
+    },
+  },
 };
