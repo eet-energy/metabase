@@ -1,7 +1,7 @@
 name: Synchronize Translations
 on:
   schedule:
-    - cron: 30 5 * * 2 # tuesday morning, UTC
+    # - cron: 30 5 * * 2 # tuesday morning, UTC
   workflow_dispatch:
 
 permissions:
